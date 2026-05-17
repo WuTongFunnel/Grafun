@@ -1,0 +1,27 @@
+#version 330 compatibility
+uniform sampler2D colortex0;
+uniform float viewHeight;
+uniform float viewWidth;
+float dx=1/viewWidth;
+float dy=1/viewHeight;
+in vec2 texcoord;
+/* RENDERTARGETS: 1 */
+layout(location = 0) out vec4 color;
+
+void main() {
+	int t=0;
+    color=vec4(0);
+    vec2 sample_pixel;
+    for(int ycnt=-1;ycnt<=1;ycnt++)
+    {
+for(int xcnt=-1;xcnt<=1;xcnt++)
+    {
+          sample_pixel.x=texcoord.x+xcnt*dx;
+          sample_pixel.y=texcoord.y+ycnt*dy;
+          if(sample_pixel.x<0||sample_pixel.x>1||sample_pixel.y<0||sample_pixel.y>1)continue;
+          color += texture(colortex0, sample_pixel);
+          t++;
+    }
+    }
+    color/=t;
+}
