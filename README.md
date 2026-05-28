@@ -5,7 +5,10 @@
 
 <img width="2560" height="1600" alt="2026-05-28_13 13 25" src="https://github.com/user-attachments/assets/1061aeaf-6609-4f56-9be8-1a2b5cef2452" />
 
-<img width="2560" height="1600" alt="2026-05-28_13 13 25" src="https://github.com/user-attachments/assets/9337fd98-b86c-42d4-95f7-8362519a40c7" />
+<img width="2560" height="1600" alt="2026-05-28_21 52 49" src="https://github.com/user-attachments/assets/1a77bc0b-fb24-4bbd-af26-3a63fe052faa" />
+
+<img width="2560" height="1600" alt="2026-05-27_22 16 55" src="https://github.com/user-attachments/assets/43f21530-c0c7-401d-94f6-ec48b86b0ba0" />
+
 
 <img width="2560" height="1600" alt="2026-05-19_14 36 29" src="https://github.com/user-attachments/assets/4f2df2a9-c6b6-4941-921b-09028c727711" />
 
