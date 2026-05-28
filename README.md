@@ -7,8 +7,9 @@
 
 <img width="2560" height="1600" alt="2026-05-28_21 52 49" src="https://github.com/user-attachments/assets/1a77bc0b-fb24-4bbd-af26-3a63fe052faa" />
 
-<img width="2560" height="1600" alt="2026-05-27_22 16 55" src="https://github.com/user-attachments/assets/43f21530-c0c7-401d-94f6-ec48b86b0ba0" />
+<img width="2560" height="1600" alt="2026-05-27_22 11 24" src="https://github.com/user-attachments/assets/33b4b8f0-c312-4280-b4b1-6b231a531fec" />
 
+<img width="2560" height="1600" alt="2026-05-27_22 16 55" src="https://github.com/user-attachments/assets/43f21530-c0c7-401d-94f6-ec48b86b0ba0" />
 
 <img width="2560" height="1600" alt="2026-05-19_14 36 29" src="https://github.com/user-attachments/assets/4f2df2a9-c6b6-4941-921b-09028c727711" />
 
