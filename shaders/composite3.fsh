@@ -1,5 +1,6 @@
 #version 450 compatibility
 #include "/lib/function.glsl"
+#include "/lib/setting.glsl"
 const bool colortex7Clear = false;
 uniform sampler2D colortex7;
 uniform sampler2D colortex0;
@@ -31,8 +32,12 @@ float dy=64/viewHeight;
     }
         maxl/=count;
     color.a=(0.03*maxl+0.97*pre);
-    //float mint=0.000075;//相机最低曝光下限
-float mint=0.00675;//人眼曝光下限
-color.a=clamp(color.a,mint,0.075);
+#if Auto_Expousre_Mode == 1
+            float mint = 0.000075;
+        #else
+            float mint = 0.00675;
+        #endif
+
+        color.a = clamp(color.a, mint, 0.075);
 }
 }
