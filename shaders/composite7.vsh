@@ -1,0 +1,8 @@
+#version 450 compatibility
+
+out vec2 texcoord;
+const bool colortex6MipmapEnabled = true;
+void main() {
+	gl_Position = ftransform();
+	texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
+}

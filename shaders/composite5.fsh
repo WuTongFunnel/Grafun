@@ -1,0 +1,44 @@
+#version 450 compatibility
+#include "/lib/function.glsl"
+#include "/lib/setting.glsl"
+const bool colortex7Clear = false;
+uniform sampler2D colortex7;
+uniform sampler2D colortex0;
+uniform float viewHeight;
+uniform float viewWidth;
+in vec2 texcoord;
+const bool colortex8MipmapEnabled = true;
+/* RENDERTARGETS: 7 */
+layout(location = 0) out vec4 color;
+void main() {
+    ivec2 pixel = ivec2(gl_FragCoord.xy);
+    color = texelFetch(colortex7, pixel, 0);
+float pre= texelFetch(colortex7, ivec2(0,0), 0).a;
+if (pixel.x == 0 && pixel.y == 0)
+{
+        float samplestep=32;
+    float dx=samplestep/viewWidth;
+float dy=samplestep/viewHeight;
+    vec4 testcolor=vec4(0);
+    float maxl=0;
+    float count=0;
+
+    for(float i=0;i<=1;i+=dy)
+    {
+            for(float j=0;j<=1;j+=dx)
+        {
+           testcolor=texture(colortex0, vec2(j,i));
+           maxl+=(E(testcolor.rgb)/E(vec3(1)));
+           count+=1.0;
+        }
+    }
+        maxl/=count;
+#if Auto_Expousre_Mode == 1
+            float mint = 0.000075;
+        #else
+            float mint = 0.00675;
+        #endif
+    maxl = clamp(maxl, mint, 0.06);
+            color.a=(0.03*maxl+0.97*pre);
+}
+}
