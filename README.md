@@ -1,7 +1,8 @@
 ![Uploading 2026-09-16_16.54.11.png…]()
 
 一款Minecraft光影，由WuTongFunnel基于Iris shaders开发，目前已实现光照阴影，半透明物体正常渲染，自动曝光, 多重散射大气，体积雾，屏幕空间反射，镜头光晕，泛光。
-![Uploading 2026-09-16_22.36.19.png…]()
+![Uploading 2026-09-16_16.54.11.png…]()
+
 <img width="2560" height="1600" alt="2026-09-11_23 14 21" src="https://github.com/user-attachments/assets/e309c8e2-021f-4809-be0f-77c96950b758" />
 <img width="2560" height="1600" alt="2026-09-16_22 36 13" src="https://github.com/user-attachments/assets/92623cd0-c993-424a-a60f-4e843c55b9c3" />
 <img width="2560" height="1600" alt="2026-09-19_23 20 14" src="https://github.com/user-attachments/assets/c9f8c8ec-31f7-456d-bf31-a46690fab3d4" />
