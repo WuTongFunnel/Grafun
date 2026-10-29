@@ -1,4 +1,6 @@
 #version 450 compatibility
+#define GRAFUN_VERTEX_STAGE
+#include "/lib/09_vertex_common.glsl"
 #include "/lib/function.glsl"
 const bool colortex1Clear = false;
 out vec2 lmcoord;
@@ -8,10 +10,13 @@ out vec3 normal;
 attribute vec4 mc_Entity;
 flat out float isWater;
 void main() {
+    calculateVertexCommon();
  isWater = mc_Entity.y == 1.0 ? 1.0 : 0.0;
 	vec4 p= gl_Vertex;
 vec4 fp=spherical_mapping(p);
  gl_Position = gbufferProjection*gbufferModelView*fp;
+
+ #endif
 	texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
 	lmcoord = (gl_TextureMatrix[1] * gl_MultiTexCoord1).xy;
 	lmcoord = lmcoord / (30.0 / 32.0) - (1.0 / 32.0);

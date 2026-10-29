@@ -1,10 +1,8 @@
 #version 450 compatibility
-
+#include "/lib/function.glsl"
 uniform sampler2D gtexture;
 uniform int renderStage;
 uniform float alphaTestRef = 0.1;
-uniform mat4 gbufferProjectionInverse;
-uniform sampler2D depthtex0;
 in vec2 texcoord;
 in vec4 glcolor;
 /*
@@ -15,6 +13,9 @@ layout(location = 0) out vec4 color;
 
 void main() {
 	float r=0.014445*0.492;
+#if SUN_SIZE != 100
+    r *= float(SUN_SIZE) / 100.0;
+#endif
 		if(length(texcoord-vec2(0.5+0.5*r,0.5+0.5*r))<0.02*r)
 	{
 		discard;
@@ -22,7 +23,7 @@ void main() {
 	float l1=length(texcoord-vec2(0.5,0.5));
 	if(l1<r)
 	{
-		color.rgb=vec3(18867);
+		color.rgb= sun_see_color;
 	color.a=1;
 	return;
 	}
@@ -31,7 +32,7 @@ void main() {
 	{
 		float k=-1.0/(q-r);
 		float b=q/(q-r);
-		color.rgb=vec3(18867)*(k*l1+b)*0.0001;
+		color.rgb= sun_see_color*(k*l1+b)*0.0001;
 	color.a=1;
 	return;
 	}

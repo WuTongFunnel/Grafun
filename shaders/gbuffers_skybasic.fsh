@@ -1,10 +1,7 @@
 #version 450 compatibility
 
 uniform int renderStage;
-uniform float viewHeight;
-uniform float viewWidth;
-uniform mat4 gbufferModelView;
-uniform mat4 gbufferProjectionInverse;
+#include "/lib/09_vertex_common.glsl"
 uniform vec3 fogColor;
 uniform vec3 skyColor;
 uniform sampler2D gtexture;
@@ -34,7 +31,6 @@ void main() {
 	color=vec4(0,0,0,1);
 	if(renderStage==MC_RENDER_STAGE_RAIN_SNOW)
 	{
-	color = texture(gtexture, texcoord) * glcolor;
-	color=vec4(0,0,0,1);
+	color =sunk* texture(gtexture, texcoord) * glcolor;
 	}
 }

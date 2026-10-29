@@ -24,7 +24,7 @@ void main() {
 	color = texture(gtexture, texcoord) * glcolor;
 	color=vec4(1,1,1,1);
 	lightmapData = vec4(0,1, 0.0, 1.0);
-encodedNormal = vec4(vec3(0,1,0) * 0.5 + 0.5, 1.0);
+encodedNormal = vec4(vec3(0,1,0) * 0.5 + 0.5, 1.5);
 	alpha=vec4(1.0,1,1,1);
 	color.a=1;
 	

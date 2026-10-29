@@ -1,52 +1,48 @@
 #version 450 compatibility
 #include "/lib/function.glsl"
-#include "/lib/setting.glsl"
-const bool colortex7Clear = false;
+uniform float nightVision;
+
 in vec2 texcoord;
 const bool colortex8MipmapEnabled = true;
-/* RENDERTARGETS: 7 */
+/* RENDERTARGETS: 14 */
 layout(location = 0) out vec4 color;
 void main() {
     ivec2 pixel = ivec2(gl_FragCoord.xy);
-    color = texelFetch(colortex7, pixel, 0);
-float pre= texelFetch(colortex7, ivec2(0,0), 0).a;
-if (pixel.x == 0 && pixel.y == 0)
+    color = texelFetch(colortex14, pixel, 0);
+if (pixel.x == 4 && pixel.y == 1)
 {
-        float samplestep=32;
-    float dx=samplestep/viewWidth;
-float dy=samplestep/viewHeight;
-    vec4 testcolor=vec4(0);
-    float maxl=0;
-    float count=0;
+    float pre= texelFetch(colortex14, ivec2(4,1), 0).a;
+float maxl =texture2DLod(colortex7, vec2(0.5,0.5), floor(log2(min(viewHeight, viewWidth)))).r;
 
-    for(float i=0;i<=1;i+=dy)
-    {
-            for(float j=0;j<=1;j+=dx)
-        {
-           testcolor=texture(colortex0, vec2(j,i));
-           maxl+=(E(testcolor.rgb)/E(vec3(1)));
-           count+=1.0;
-        }
-    }
-        maxl/=count;
 #if Auto_Expousre_Mode == 1
-float maxt=999;
-            float mint = 0.000075;
-        #else
-        float maxt=0.05;
-            float mint = 0.00675;
-        #endif
-    maxl = clamp(maxl, mint, maxt);
-      vec4 sun_pixel=gbufferProjection*vec4(sun_view, 0.0);
-   sun_pixel/= sun_pixel.w;
-   vec2 sun_uv = sun_pixel.xy * 0.5 + 0.5;
-float sampledepth=0;
-if(all(greaterThan(sun_uv.xy, vec2(1e-6))) && all(lessThan(sun_uv.xy, vec2(1.-1e-6)))&&sun_view.z<0)sampledepth = texture(depthtex0, sun_uv).r;
+    float maxt = sunk *999.0*(0.18/0.5);
+    float mint = sunk * 0.0000000375*(0.18/0.5);
+#else
+    float maxt = sunk * 0.05*(0.18/0.5);
+    float mint = sunk * 0.000004*(0.18/0.5);
+#endif
 
-if(sampledepth==1.0) 
+if (nightVision != 0.0)
 {
-    maxl=maxt;
+    mint = sunk * 0.0000000375*(0.18/0.5);
 }
-            color.a=(0.03*maxl+0.97*pre);
+
+// 线性亮度上下限转换为 Log2
+float maxLog = log2(max(maxt, 1e-20));
+float minLog = log2(max(mint, 1e-20));
+
+// maxl 本身已经是平均 Log2 亮度
+maxl = clamp(maxl, minLog, maxLog);
+
+// 在 Log2 空间进行时间平滑
+#if EXPOSURE_ADAPTATION == 3
+    color.a = 0.03 * maxl + 0.97 * pre;
+#else
+    float adaptation =
+        float(EXPOSURE_ADAPTATION) / 100.0;
+
+    color.a = mix(pre, maxl, adaptation);
+#endif
+
 }
 }

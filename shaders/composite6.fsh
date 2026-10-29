@@ -1,14 +1,23 @@
 #version 450 compatibility
-#include /lib/function.glsl
-
+#include "/lib/function.glsl"
 in vec2 texcoord;
-/* RENDERTARGETS: 0 */
+/* RENDERTARGETS: 0,7 */
 layout(location = 0) out vec4 finalcolor;
-
+layout(location = 1) out vec4 Lcolor;
 void main() {
+vec3 hdr = max(texture(colortex0, texcoord).rgb, vec3(0.0));
+
+float luminance = max(E(hdr), 1e-10);
+
+Lcolor = vec4(log2(luminance), 0.0, 0.0, 1.0);
+
     float alpha_g=texture(colortex8, texcoord).g;
      finalcolor = texture(colortex0, texcoord);
-             			if(texture(depthtex0, texcoord).r==1.0)
+ /*            			#ifdef DISTANT_HORIZONS
+if(gfDhFrontSky(texcoord))
+#else
+if(texture(depthtex0, texcoord).r==1.0)
+#endif
 	{
 		return;
 	}
@@ -20,9 +29,9 @@ void main() {
         return;
     }
         vec3 alpha_color = texture(colortex3, texcoord).rgb;
- float dx = 1.0 / viewWidth;
-float dy = 1.0 / viewHeight;
-float range = 1.0;   // 采样半径，单位：像素
+ float dx = gfPixelSize.x;
+float dy = gfPixelSize.y;
+float range = REFLECTION_BLUR;   // 采样半径，单位：像素
 
 vec4 testcolor = vec4(0.0);
 float count = 0.0;
@@ -45,11 +54,13 @@ for(float i = yMin; i <= yMax; i += dy)
 }
 vec4 avgColor = testcolor / count;
 vec3 reflect_color=avgColor.rgb;
+#if REFLECTION_STRENGTH != 100
+    reflect_color *= float(REFLECTION_STRENGTH) / 100.0;
+#endif
  if (alpha_t < 0.001&&wetness>0.01) {
     finalcolor.rgb+=wetness*reflect_color;
         return;
     }
-finalcolor.rgb+=reflect_color;
-
+finalcolor.rgb+=reflect_color;*/
 
 }

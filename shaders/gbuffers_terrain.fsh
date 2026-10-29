@@ -32,12 +32,8 @@ void main() {
 		color =vec4(1,1,1,1);
 	}
 	ivec2 pixel = ivec2(gl_FragCoord.xy);
-lightmapData= texelFetch(colortex1, pixel, 0);
 	color = texture(gtexture, texcoord) * glcolor;
-	float t=color.a;
-	color.a=t;
 	lightmapData = vec4(lmcoord, 0.0, 1.0);
-	
 encodedNormal = vec4(normal * 0.5 + 0.5, 1.0);
 	if (color.a <alphaTestRef) {
 		discard;

@@ -1,15 +1,20 @@
 #version 450 compatibility
-#include /lib/function.glsl
+#include "/lib/function.glsl"
+uniform sampler3D atom;
 in vec2 texcoord;
 /* RENDERTARGETS: 12 */
 layout(location = 0) out vec4 finalcolor;
 
 void main() {
-      float alpha_g=texture(colortex8, texcoord).g;
+     float alpha_g=texture(colortex8, texcoord).g;
         float alpha_r=texture(colortex8, texcoord).r;
     vec4 alpha_color = texture(colortex3, texcoord);
     vec4 color = texture(colortex0, texcoord);
-        			if(texture(depthtex0, texcoord).r==1.0)
+        			#ifdef DISTANT_HORIZONS
+if(gfDhFrontSky(texcoord))
+#else
+if(texture(depthtex0, texcoord).r==1.0)
+#endif
 	{
 		return;
 	}
@@ -22,17 +27,11 @@ void main() {
 alpha_color.rgb = pow(alpha_color.rgb, vec3(2.2));
 vec4 alpha_reflect_color=texture(colortex9, texcoord);
 float alpha_t=texture(colortex8, texcoord).r;
-
-    // ========== 1. 获取视图空间位置 ==========
-    vec4 ndcPos = vec4(texcoord, texture(depthtex0, texcoord).r, 1.0);
-    ndcPos.xyz = ndcPos.xyz * 2.0 - 1.0;
-    vec4 viewPosRaw = gbufferProjectionInverse * ndcPos;
-    viewPosRaw.xyz /= viewPosRaw.w;
-    vec3 viewPos = viewPosRaw.xyz;
-
-    // ========== 2. 视图空间 → 世界空间 ==========
-    vec4 worldPos4 = gbufferModelViewInverse * vec4(viewPos, 1.0);
-    vec3 worldPos = worldPos4.xyz / worldPos4.w;
+    vec3 worldPos =texture(colortex15, texcoord).rgb;
+#ifdef DISTANT_HORIZONS
+// Reconstruct far positions from depth instead of quantized RGBA16F storage.
+if (gfDhFrontAt(texcoord)) worldPos = gfDhPlayerPosition(texcoord, textureLod(dhDepthTex0, texcoord, 0.0).r);
+#endif
 
     // ========== 3. 世界空间法线 ==========
          vec3 encodedNormal = texture(colortex5, texcoord).rgb;
@@ -40,19 +39,20 @@ float alpha_t=texture(colortex8, texcoord).r;
        if (alpha_r < 0.1&&wetness>0.01) {
          encodedNormal = texture(colortex2, texcoord).rgb;
 worldNormal = normalize((encodedNormal - 0.5) * 2.0);
-      // if( dot(worldNormal,vec3(0,1,0))<0.01)return;
     }
+
+    #ifdef Realtime_Sky
 		vec3 p = worldPos+cameraPosition;
 vec3 worldup=vec3(0,1,0);
 
-vec3 mcearthcore=vec3(cameraPosition.x,MC_sealevel-MC_r,cameraPosition.z);
+vec3 mcearthcore=gfEarthCenterWorld;
 vec3 pcore=normalize(p-mcearthcore);
 vec3 tempaxis = cross(worldup, pcore); 
 
 float theta = acos( clamp(dot(worldup,pcore), -1.0, 1.0) );
 vec3 paxis=normalize(tempaxis);
 worldNormal=rotateVectorAroundAxis(worldNormal,paxis ,theta);
-
+#endif
     // ========== 4. 世界空间视线和反射 ==========
     vec3 worldViewDir = normalize(worldPos);   // 从片元指向相机（在世界空间中，相机在原点）
     vec3 reflectDir = reflect(worldViewDir, worldNormal);
@@ -62,15 +62,20 @@ abs(reflectDir.y);
     // return;
 
     // ========== 6. 世界空间光线步进 ==========
-    vec3 reflectColor= (skybackground(vec3(reflectDir.x,abs(reflectDir.y),reflectDir.z),vec2(0),1,0).rgb+skylightfogmodel(vec3(reflectDir.x,(reflectDir.y),reflectDir.z),worldPos));
-   int maxSteps = 512;
-    float stepSize = 0.5;           // 世界空间步长
-    float thickness = 0.5;  
-    float rayt=max(thickness*min(sqrt((1.0/(dot(reflectDir,worldNormal)*dot(reflectDir,worldNormal)))-1),512),0);     
+    vec3 reflectColor= vec3(0);
+    #ifdef Realtime_Sky
+    reflectColor=(skybackground(vec3(reflectDir.x,abs(reflectDir.y),reflectDir.z),vec2(0),1,0).rgb+skylightfogmodel(vec3(reflectDir.x,(reflectDir.y),reflectDir.z),worldPos));
+    #endif
+    	#ifndef Realtime_Sky 
+reflectColor=skybackground(vec3(reflectDir.x,abs(reflectDir.y),reflectDir.z),vec2(0),1,0).rgb+light_color*texture(atom,vec3(lut_texcoord(reflectDir,sun_world))).rgb+moon_color*texture(atom,vec3(lut_texcoord(reflectDir,-sun_world))).rgb;
+#endif
+   int maxSteps = SSR_MAX_STEPS;
+    float stepSize = SSR_STEP_SIZE;           // 世界空间步长
+    float thickness = SSR_THICKNESS;  
+    float rayt=min(sqrt((1.0/(dot(reflectDir,worldNormal)*dot(reflectDir,worldNormal)))-1),512);     
     vec3 rayPos = worldPos + (rayt)* reflectDir;
 
 
-    bool hit = false;
 
     for (int i = 0; i < maxSteps; ++i) {
 
@@ -89,21 +94,50 @@ abs(reflectDir.y);
             break;
         }
      // 边界检查
+        #ifdef DISTANT_HORIZONS
+        // Continue past the native far plane while the ray is inside the DH
+        // projection. Its screen XY uses the same camera/FOV.
+        if (clipPos.w <= 0.0) break;
+        if (clipPos.z>1||clipPos.z<-1) {
+            vec4 distantClip = dhProjection * vec4(viewRayPos.xyz, 1.0);
+            if (distantClip.w <= 0.0 || abs(distantClip.z / distantClip.w) > 1.0) break;
+        }
+#else
         if (clipPos.z>1||clipPos.z<-1) {
             break;
         }
+#endif
         // 采样场景深度
         float sampleDepth = texture(depthtex0, sampleUV).r;
         vec4 sampleNDC = vec4(sampleUV * 2.0 - 1.0, sampleDepth * 2.0 - 1.0, 1.0);
         vec4 sampleViewPos = gbufferProjectionInverse * sampleNDC;
         sampleViewPos.xyz /= sampleViewPos.w;
+#ifdef DISTANT_HORIZONS
+        bool sampleIsDistant = gfDhFrontAt(sampleUV);
+        if (sampleIsDistant) {
+            float distantDepth = textureLod(dhDepthTex0, sampleUV, 0.0).r;
+            sampleViewPos = vec4(gfDhViewPosition(sampleUV, distantDepth), 1.0);
+        }
+        // Past the native far plane only DH can supply an intersection. Do
+        // not newly accept a near object that the original tracer clipped.
+        if (!sampleIsDistant && clipPos.z > 1.0) {
+            rayPos += stepSize * reflectDir;
+            continue;
+        }
+#endif
         // 视图空间点构造齐次向量 w=1
 vec4 sampleViewPos4 = vec4(sampleViewPos.xyz, 1.0);
 // 乘逆ModelView，得到clip前的世界齐次坐标
 vec4 sampleWorldPos4 = gbufferModelViewInverse * sampleViewPos4;
 vec3 sampleWorldPos = sampleWorldPos4.xyz / sampleWorldPos4.w;
 
+        #ifdef DISTANT_HORIZONS
+        // Keep Grafun's existing native fallback. A DH sample is tested as
+        // actual geometry below, even on the final step, never as a sun sprite.
+        if(i==maxSteps-1 && !sampleIsDistant)
+#else
         if(i==maxSteps-1)
+#endif
     {  
        
         vec4 sunredercolor=texture(colortex11,sampleUV);
@@ -118,7 +152,14 @@ vec3 sampleWorldPos = sampleWorldPos4.xyz / sampleWorldPos4.w;
         }
             break;
     }
+   #ifdef DISTANT_HORIZONS
+   bool rayInFront = sampleIsDistant
+       ? sampleViewPos.z < viewRayPos.z
+       : sampleDepth > rdepth;
+   if (rayInFront) {
+#else
    if (sampleDepth> rdepth) {
+#endif
     rayPos += stepSize * reflectDir;
          continue;
         }
@@ -128,7 +169,6 @@ vec3 sampleWorldPos = sampleWorldPos4.xyz / sampleWorldPos4.w;
         float delta=dot(v,v) -dot(reflectDir,v)*dot(reflectDir,v);
 
         if (delta<pow(thickness,2)) {
-            hit = true;
             reflectColor = texture(colortex0, sampleUV).rgb;
             break;
         }
@@ -136,5 +176,6 @@ vec3 sampleWorldPos = sampleWorldPos4.xyz / sampleWorldPos4.w;
           rayPos += stepSize * reflectDir;
     }
 float fresnel=pow(clamp(1-max(0,dot(-worldViewDir,worldNormal)),0.0,1.0),5);
-    finalcolor.rgb= reflectColor*fresnel;
+    finalcolor.rgb= fresnel*reflectColor;
 }
+
