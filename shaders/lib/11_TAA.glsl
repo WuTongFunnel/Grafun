@@ -15,7 +15,7 @@ vec2 jlitter(int frame)
 {
     return vec2( (2*halton(frame,2)-1)/(viewWidth), (2*halton(frame,3)-1)/(viewHeight) );
 }
-uniform int frameCounter;
+// frameCounter is declared once in 00_globals.glsl.
 vec2 djlitter=jlitter(frameCounter);
 
 

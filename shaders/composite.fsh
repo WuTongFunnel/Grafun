@@ -12,23 +12,20 @@ void main() {
 
 			ivec2 uv=ivec2(floor(gl_FragCoord.xy));
 				skylight=texelFetch(colortex14, uv, 0);
-		#ifndef Realtime_Sunlight
-		     if(uv.x==3&&uv.y==1)
-	   {
-	
-		   float sunl=sunRayAtmLength(vec3(0), sun_world);  
-		  vec3  sunlightColor = light_color*scatterf(sunl/MC_atom_height)*(1-fog_kk(sunl/MC_atom_height,sun_theta_s));
-		  skylight.rgb=sunlightColor.rgb;
-		  return;
-	   }
-	       if(uv.x==3&&uv.y==2)
-	   {
-						float moonl=sunRayAtmLength(vec3(0), -sun_world);
-				vec3 moonlightcolor=moon_color*scatterf(moonl/MC_atom_height)*(1-fog_kk(moonl/MC_atom_height,sun_theta_s));
-		  skylight.rgb=moonlightcolor.rgb;
-		  return;
-	   }
-	   #endif
+        #ifndef Realtime_Sunlight
+        // 1025 optical-depth LUT based solar/lunar attenuation.
+        // Cached at (3,1) and (3,2), matching the 1024 layout.
+        if (uv.x == 3 && uv.y == 1)
+        {
+            skylight.rgb = light_color * onlyafterT(vec3(0.0), sun_world);
+            return;
+        }
+        if (uv.x == 3 && uv.y == 2)
+        {
+            skylight.rgb = moon_color * onlyafterT(vec3(0.0), -sun_world);
+            return;
+        }
+        #endif
 		#ifndef Realtime_Skylight
 		vec3 normal=vec3(0);
 		int tsign=0;
@@ -67,7 +64,7 @@ void main() {
 		return;
 	   }
 	   		vec3 skylightColor=vec3(0);
-	   				uint t=SKYLIGHT_CACHE_SAMPLES; 
+	   				uint t=16u; 
 for(uint i=0;i<t;i++)
 {
 	vec3 p =HammersleyCosHemisphereDir(i,t,normal);
@@ -76,16 +73,11 @@ for(uint i=0;i<t;i++)
 	 {
 continue;
 	 }
-	#ifdef Realtime_Sky 
- tempcolor= skylightfogmodel(p, vec3(0))+skybackground(p,vec2(0,9),1,1).rgb;
-#endif
-	#ifndef Realtime_Sky 
-	float sun_sign=1;
- tempcolor= moon_color*texture(atom,vec3(lut_texcoord(p,-sun_world))).rgb+light_color*texture(atom,vec3(lut_texcoord(p,sun_world))).rgb +skybackground(p,vec2(0,9),1,1).rgb;
-#endif
+        // 1025 atmospheric model: integrate in the sampled hemisphere direction.
+        tempcolor = subAtomfog(vec3(0.0), vec3(0.0), p, 1.0)+skybackground(p,vec2(0,9),1,1).rgb;
  skylightColor+=tempcolor;
 }
-skylightColor/=t;
+skylightColor/=float(t);
 skylightColor *=PI;  
 skylight.rgb=skylightColor.rgb;
 #endif

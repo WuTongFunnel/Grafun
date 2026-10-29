@@ -100,10 +100,3 @@ vec4 NDC_Pos=p*2-1;
 return pixel_world;
         }
   
-        vec3 scatterf(float l)
-        {
-#if RAYLEIGH_DENSITY != 100
-    l *= float(RAYLEIGH_DENSITY) / 100.0;
-#endif
-         return vec3(pow(sun_atten_r,l),pow(sun_atten_g,l),pow(sun_atten_b,l));
-        }

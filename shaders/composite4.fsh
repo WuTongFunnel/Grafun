@@ -2,7 +2,6 @@
 #version 450 compatibility
 #include "/lib/function.glsl"
 
-uniform sampler3D atom;
 in vec2 texcoord;
 
 /* RENDERTARGETS: 0 */
@@ -10,7 +9,8 @@ layout(location = 0) out vec4 finalcolor;
 
 void main()
 {
-    vec4 color = texture(colortex0, texcoord);
+    vec3 sceneColor = texture(colortex0, texcoord).rgb;
+
     vec3 alpha_color = pow(
         texture(colortex3, texcoord).rgb,
         vec3(2.2)
@@ -41,6 +41,7 @@ void main()
     bool hasTransparentLayer = depth0 != depth1;
 
 #ifdef DISTANT_HORIZONS
+
     bool dhFront = gfDhFrontAt(texcoord);
     bool dhOpaque = gfDhOpaqueAt(texcoord);
     bool dhTranslucent = gfDhHasTranslucent(texcoord);
@@ -67,159 +68,100 @@ void main()
 
     frontSky = gfDhFrontSky(texcoord);
     backSky = gfDhOpaqueSky(texcoord);
-
     hasTransparentLayer = dhTranslucent;
+
 #endif
 
-    float fogDepth0 = frontSky ? 1.0 : 0.5;
-    float fogDepth1 = backSky ? 1.0 : 0.5;
+   
+const int ATMOSPHERE_STEPS = 64;
 
-    vec2 frontLight = texture(
-        colortex1, texcoord
-    ).rg;
+// 不透明物体的光照
+float opaqueLight = pow(
+    texture(colortex1, texcoord).g, 2.0
+);
 
-    vec2 transparentLight = texture(
-        colortex4, texcoord
-    ).rg;
+// 半透明物体的光照
+float translucentLight = pow(
+    texture(colortex4, texcoord).g, 2.0
+);
 
-    if (hasTransparentLayer)
-        frontLight = transparentLight;
-
-#ifdef Realtime_Sky
-
-    // 前景为空时，加入实时天空
-    if (frontSky)
+// 天空颜色
+if (frontSky)
+{
+    if (length(sceneColor) <= 0.000001)
     {
-        color.rgb += sky(
+        sceneColor += sky(
             texcoord, 1.0, camera_r
         ).rgb;
-
-        frontLight = vec2(0.0, 1.0);
     }
+}
 
-    // 第一层：相机到前景表面的雾
-    vec3 result = fogmodel(
-        pixel_world_pos0,
-        color.rgb,
-        fogDepth0,
+vec3 result;
+
+if (hasTransparentLayer && !frontSky)
+{
+    // 第一段：相机 -> 半透明物体
+    // 这一段对应半透明表面，使用 colortex4
+    result = atmosphere(
         vec3(0.0),
-        frontLight
+        pixel_world_pos0,
+        sceneColor,
+        0.5,
+        ATMOSPHERE_STEPS,
+        translucentLight
     );
 
-    // 第二层：透明表面后方是天空
-    if (hasTransparentLayer && backSky && !frontSky)
-    {
-        vec3 skyColor = sky(
-            texcoord, 1.0, camera_r
-        ).rgb;
+    // 第二段：半透明物体 -> 后方物体或天空
+    // 不透明物体用 colortex1，天空用 1.0
+    float backLight = backSky ? 1.0 : opaqueLight;
 
-        vec3 backFog = fogmodel(
-            pixel_world_pos1 - pixel_world_pos0,
-            skyColor,
-            fogDepth1,
+    vec3 backDirection = pixel_world_pos1 - pixel_world_pos0;
+
+    if (backSky)
+    {
+        backDirection = pixel_world_pos1;
+
+        if (dot(backDirection, backDirection) <= 1e-8)
+            backDirection = pixel_world_pos0;
+    }
+
+    if (dot(backDirection, backDirection) > 1e-8)
+    {
+        backDirection = normalize(backDirection);
+
+        vec3 backColor = backSky
+            ? sky(texcoord, 1.0, camera_r).rgb
+            : sceneColor;
+
+        vec3 backAtmosphere = atmosphere(
             pixel_world_pos0,
-            vec2(0.0, 1.0)
+            backSky
+                ? pixel_world_pos0 + backDirection
+                : pixel_world_pos1,
+            backColor,
+            backSky ? 1.0 : 0.5,
+            ATMOSPHERE_STEPS,
+            backLight
         );
 
-        result += backFog * alpha_color;
+        result += backAtmosphere * alpha_color;
     }
+}
+else
+{
+    // 没有半透明层：直接计算相机到目标的整段
+    float light = frontSky ? 1.0 : opaqueLight;
 
-    finalcolor = vec4(result, 1.0);
+    result = atmosphere(
+        vec3(0.0),
+        pixel_world_pos0,
+        sceneColor,
+        frontSky ? 1.0 : 0.5,
+        ATMOSPHERE_STEPS,
+        light
+    );
+}
 
-#else
+finalcolor = vec4(result, 1.0);
 
-    // 非实时天空模式
-    vec3 result = color.rgb;
-
-    if (!frontSky)
-    {
-        result += fogmodel(
-            pixel_world_pos0,
-            color.rgb,
-            fogDepth0,
-            vec3(0.0),
-            frontLight
-        );
-
-        // 后景天空透过透明表面
-        if (hasTransparentLayer && backSky)
-        {
-            if (length(color.rgb) <= 0.000001)
-            {
-                vec3 direction = normalize(
-                    pixel_world_pos1
-                );
-
-                float atmosphereLength =
-                    sunRayAtmLength(
-                        vec3(0.0), direction
-                    );
-
-                vec3 atmosphere =
-                    moon_color * texture(
-                        atom,
-                        vec3(lut_texcoord(
-                            direction, -sun_world
-                        ))
-                    ).rgb
-                    +
-                    light_color * texture(
-                        atom,
-                        vec3(lut_texcoord(
-                            direction, sun_world
-                        ))
-                    ).rgb
-                    +
-                    sky(texcoord, 1.0, 0.0).rgb *
-                    scatterf(
-                        atmosphereLength / atom_height
-                    );
-
-                result += atmosphere * alpha_color;
-            }
-        }
-    }
-    else
-    {
-        // 无前景几何体：显示大气天空
-        if (length(color.rgb) <= 0.000001)
-        {
-            vec3 direction = normalize(
-                pixel_world_pos0
-            );
-
-            float atmosphereLength =
-                sunRayAtmLength(
-                    vec3(0.0), direction
-                );
-
-            vec3 atmosphere =
-                moon_color * texture(
-                    atom,
-                    vec3(lut_texcoord(
-                        direction, -sun_world
-                    ))
-                ).rgb
-                +
-                light_color * texture(
-                    atom,
-                    vec3(lut_texcoord(
-                        direction, sun_world
-                    ))
-                ).rgb
-                +
-                sky(texcoord, 1.0, 0.0).rgb *
-                scatterf(
-                    atmosphereLength / atom_height
-                );
-
-            result += atmosphere;
-        }
-    }
-
-    finalcolor = vec4(result, 1.0);
-float sky=0;
-if(frontSky)sky=1;
-    finalcolor.rgb= cloud(vec3(0),pixel_world_pos0,finalcolor.rgb,sky);
-#endif
 }

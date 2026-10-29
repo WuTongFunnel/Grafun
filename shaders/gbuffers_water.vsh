@@ -16,7 +16,6 @@ void main() {
 vec4 fp=spherical_mapping(p);
  gl_Position = gbufferProjection*gbufferModelView*fp;
 
- #endif
 	texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
 	lmcoord = (gl_TextureMatrix[1] * gl_MultiTexCoord1).xy;
 	lmcoord = lmcoord / (30.0 / 32.0) - (1.0 / 32.0);

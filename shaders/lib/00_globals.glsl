@@ -9,8 +9,9 @@ const float shadowDistance = 512; // [64 128 256 384 512 768 1024]
 #define SHADOW_RANGE  3 // [1 2 3 4 6]
 uniform sampler2D shadowtex0;
 uniform sampler2D shadowtex1;
-uniform sampler2D starlightmap;
 uniform sampler2D perlin;
+uniform sampler2D transmittance;
+uniform sampler2D starmaplight;
 uniform sampler3D cloudNoiseTex;
 const int shadowMapResolution =4096; // [512 1024 2048 4096 8192]
 const bool shadowtex0Nearest = true;
@@ -26,6 +27,8 @@ uniform mat4 shadowProjection;
 uniform mat4 gbufferModelView;
 uniform mat4 gbufferProjection;
 uniform vec3 cameraPosition;
+uniform int frameCounter; // Iris render-frame index for TAA jitter
+uniform float frameTimeCounter; // elapsed render time in seconds (cloud motion)
 uniform float rainStrength;
 uniform float thunderStrength;
 uniform sampler2D colortex0;
@@ -119,8 +122,5 @@ const int deptex0Format = RGBA16F;
 /*
 const int deptex1Format = RGBA16F;
 */
-float mkt=1;
-
-float mie_g = ATMOSPHERE_MIE_G;
 uniform sampler2D dhDepthTex1;
 #endif // GRAFUN_GLOBAL_UNIFORMS_GLSL

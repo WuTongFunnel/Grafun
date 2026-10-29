@@ -2,26 +2,9 @@
 
 uniform int renderStage;
 #include "/lib/09_vertex_common.glsl"
-uniform vec3 fogColor;
-uniform vec3 skyColor;
 uniform sampler2D gtexture;
 in vec2 texcoord;
 in vec4 glcolor;
-
-float fogify(float x, float w) {
-	return w / (x * x + w);
-}
-
-vec3 calcSkyColor(vec3 pos) {
-	float upDot = dot(pos, gbufferModelView[1].xyz); //not much, what's up with you?
-	return mix(skyColor, fogColor, fogify(max(upDot, 0.0), 0.25));
-}
-
-vec3 screenToView(vec3 screenPos) {
-	vec4 ndcPos = vec4(screenPos, 1.0) * 2.0 - 1.0;
-	vec4 tmp = gbufferProjectionInverse * ndcPos;
-	return tmp.xyz / tmp.w;
-}
 
 /* RENDERTARGETS: 0,3 */
 layout(location = 0) out vec4 color;

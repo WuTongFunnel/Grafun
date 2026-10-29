@@ -4,38 +4,18 @@
 // Shared values are computed by calculateVertexCommon() in the vertex stage.
 // Fragment shaders receive the same values through flat inputs; they do not
 // recompute these expressions. This is per vertex / per pass, not once per frame.
-#include "/lib/00_globals_and_fog_coefficients.glsl"
+#include "/lib/00_globals.glsl"
 
 uniform vec3 sunPosition;
-#if ATM_TRANSMISSION_R == 955
-uniform float sun_atten_r;
-#else
-const float sun_atten_r = float(ATM_TRANSMISSION_R) / 1000.0;
-#endif
-#if ATM_TRANSMISSION_G == 897
-uniform float sun_atten_g;
-#else
-const float sun_atten_g = float(ATM_TRANSMISSION_G) / 1000.0;
-#endif
-#if ATM_TRANSMISSION_B == 768
-uniform float sun_atten_b;
-#else
-const float sun_atten_b = float(ATM_TRANSMISSION_B) / 1000.0;
-#endif
 uniform float sunAngle;
 uniform vec3 sun_origin_base_color;
-uniform vec3 light_pollution_color;
-uniform float eyeAltitude;
 
 // Configuration constants: these never require a varying or a texture cache.
-const float atom_height = 100000.0;
-#ifndef Realtime_Sky
-    #define earth_factor 1.0
-#else
-    #define earth_factor 1.0
-#endif
+// Planet curvature is kept for the moon and the independent volumetric clouds.
+#define earth_factor 1.0
 const float ambientOcclusionLevel = 1.0;
 const float earth_r = 6371000.0;
+const float atom_height = 100000.0;
 const float MC_r = earth_r / earth_factor;
 const float MC_atom_height = atom_height / earth_factor;
 const float MC_ar = MC_r + MC_atom_height;
@@ -67,10 +47,6 @@ GRAFUN_COMMON_IO float gfCameraRadius;
 GRAFUN_COMMON_IO vec3 gfEarthCenterWorld;
 GRAFUN_COMMON_IO vec3 gfHandLight;
 GRAFUN_COMMON_IO vec2 gfPixelSize;
-
-GRAFUN_COMMON_IO float gfFogBase;
-GRAFUN_COMMON_IO vec3 gfRayleighCoeff;
-GRAFUN_COMMON_IO float gfMieCoeff;
 
 GRAFUN_COMMON_IO vec3 gfMoonCore;
 GRAFUN_COMMON_IO float gfMoonIntersectionC;
@@ -109,24 +85,12 @@ GRAFUN_COMMON_IO mat3 gfStarRotation;
 
 #undef GRAFUN_COMMON_IO
 
-// All pack call sites use the current frame's sun_theta_s. Keep the legacy
-// two-argument signature while the weather/sun coefficient is prepared in VS.
-// The distance l2 remains per ray / per pixel and must not be made global.
-float fog_kk(float l2, float frame_sun_theta_s)
-{
-    return 1.0 - pow(gfFogBase, -l2);
-}
-
 #ifdef GRAFUN_VERTEX_STAGE
 
 // Existing helpers are defined by function.glsl after this include.
 // Keep the original rotation implementation, including its coefficients.
 vec3 rotateVectorAroundAxis(vec3 v, vec3 axis, float angle);
 
-#if defined(GRAFUN_COMPOSITE8) || defined(GRAFUN_COMPOSITE9)
-    float skyl(vec3 pixel_world, float pixel_r);
-    vec3 scatterf(float l);
-#endif
 
 #if defined(GRAFUN_COMPOSITE8) && defined(Sun_Bloom)
     vec3 getSoftShadow(vec4 shadowClipPos, float bias);
@@ -136,48 +100,6 @@ vec3 rotateVectorAroundAxis(vec3 v, vec3 axis, float angle);
 #if defined(GRAFUN_COMPOSITE9) && defined(Vignette) && Vignette_Type == 1
     float Vignette_integralRect(vec3 fp, float a);
 #endif
-
-float skyl(vec3 pixel_world,float pixel_r)
-        {
-          float pixel_world_theta_c=dot(pixel_world, vec3(0,1,0));
-			float pixel_world_theta_s=sqrt(clamp(1- pixel_world_theta_c* pixel_world_theta_c,0,1));
-          float l=1;
-          float l_MP=1;
-{
-vec3 OP=vec3(0,pixel_r,0);
-float tM=-dot(OP,pixel_world)+sqrt(pow(dot(OP,pixel_world),2)+pow(MC_ar,2)-pow(pixel_r,2));
-l_MP=tM;
-vec3 OM=OP+tM*pixel_world;
-float tQ=-2*dot(OM,sun_world);
-float l_r=l_MP;
-if(tQ>=0)
-{
-vec3 OQ=OM+tQ*(sun_world);
-vec3 OH=((OQ+OM)/2.0);
-}
-l=l_r/MC_atom_height;
-}
-   if(pixel_r>MC_ar)
-   {
-    l=0;
-     if(pixel_world_theta_c<0&&pixel_world_theta_s<(MC_ar/pixel_r))
-   {
-    l=(2*sqrt(MC_ar*MC_ar-pixel_r*pixel_r*pixel_world_theta_s*pixel_world_theta_s))/MC_atom_height;
-   }
-   }
-return l;
-        }
-
-float calculateVertexFogBase(float frame_sun_theta_s)
-{
-    float fog_world_fun_max = FOG_CLEAR_MAX;
-    float fog_world_fun_min = 1.0;
-    float fog_world_fun_speed = FOG_CURVE_POWER;
-    float fog_world_fun = (fog_world_fun_max - fog_world_fun_min)
-        * pow(frame_sun_theta_s, 2.0 * fog_world_fun_speed) + fog_world_fun_min;
-    return fog_world_fun + FOG_RAIN * pow(rainStrength, 2.0)
-        + FOG_THUNDER * pow(thunderStrength, 2.0);
-}
 
 vec3 calculateVertexStarColumn(vec3 column, vec3 sunAxis, float angle)
 {
@@ -217,15 +139,6 @@ void calculateVertexCommon()
     gfHandLight = 0.2*heldBlockLightValue * blocklightColor;
     gfPixelSize = vec2(1.0 / viewWidth, 1.0 / viewHeight);
 
-    // Only the base coefficients are shared. Ray length and step size stay local.
-    gfFogBase = calculateVertexFogBase(sun_theta_s);
-    gfRayleighCoeff = vec3(-log(sun_atten_r), -log(sun_atten_g), -log(sun_atten_b))
-        / MC_atom_height;
-#if RAYLEIGH_DENSITY != 100
-    gfRayleighCoeff *= float(RAYLEIGH_DENSITY) / 100.0;
-#endif
-    gfMieCoeff = log(gfFogBase) / MC_atom_height;
-
     vec3 sunAxis = rotateVectorAroundAxis(vec3(0.0, 0.0, 1.0),
         vec3(1.0, 0.0, 0.0), radians(-rotation));
     float moon_distance = MC_r * 59.0;
@@ -255,9 +168,6 @@ void calculateVertexCommon()
     );
 
     #if defined(GRAFUN_COMPOSITE8) || defined(GRAFUN_COMPOSITE9)
-        float pixel_r = (eyeAltitude - MC_sealevel) + MC_r;
-        float sunl = skyl(sun_world, pixel_r);
-        sune = scatterf(sunl) * (1.0 - fog_kk(sunl, sun_theta_s));
     #endif
 
     #if defined(GRAFUN_COMPOSITE8) && defined(Sun_Bloom)

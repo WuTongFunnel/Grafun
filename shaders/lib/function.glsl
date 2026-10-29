@@ -9,9 +9,7 @@
 #include "/lib/10_distant_horizons.glsl"
 #include "/lib/03_moon.glsl"
 #include "/lib/04_sky_and_stars.glsl"
-#include "/lib/05_atmosphere_geometry.glsl"
-#include "/lib/06_sky_atmosphere_scattering.glsl"
-#include "/lib/07_fog_and_side_scattering.glsl"
-#include "/lib/08_sky_length_vignette_lut.glsl"
+#include "/lib/08_vignette.glsl"
+#include "/lib/07_Atomsphere.glsl"
 #include "/lib/12_cloud.glsl"
 #endif // GRAFUN_FUNCTION_GLSL

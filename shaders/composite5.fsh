@@ -6,7 +6,7 @@ in vec2 texcoord;
 layout(location = 0) out vec4 finalcolor;
 
 void main() {
-     float alpha_g=texture(colortex8, texcoord).g;
+      float alpha_g=texture(colortex8, texcoord).g;
         float alpha_r=texture(colortex8, texcoord).r;
     vec4 alpha_color = texture(colortex3, texcoord);
     vec4 color = texture(colortex0, texcoord);
@@ -63,11 +63,8 @@ abs(reflectDir.y);
 
     // ========== 6. 世界空间光线步进 ==========
     vec3 reflectColor= vec3(0);
-    #ifdef Realtime_Sky
-    reflectColor=(skybackground(vec3(reflectDir.x,abs(reflectDir.y),reflectDir.z),vec2(0),1,0).rgb+skylightfogmodel(vec3(reflectDir.x,(reflectDir.y),reflectDir.z),worldPos));
-    #endif
     	#ifndef Realtime_Sky 
-reflectColor=skybackground(vec3(reflectDir.x,abs(reflectDir.y),reflectDir.z),vec2(0),1,0).rgb+light_color*texture(atom,vec3(lut_texcoord(reflectDir,sun_world))).rgb+moon_color*texture(atom,vec3(lut_texcoord(reflectDir,-sun_world))).rgb;
+//reflectColor=skybackground(vec3(reflectDir.x,abs(reflectDir.y),reflectDir.z),vec2(0),1,0).rgb+light_color*texture(atom,vec3(lut_texcoord(reflectDir,sun_world))).rgb+moon_color*texture(atom,vec3(lut_texcoord(reflectDir,-sun_world))).rgb;
 #endif
    int maxSteps = SSR_MAX_STEPS;
     float stepSize = SSR_STEP_SIZE;           // 世界空间步长

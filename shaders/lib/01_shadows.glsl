@@ -10,7 +10,7 @@ vec3 distortShadowClipPos(vec3 shadowClipPos){
 
   shadowClipPos.xy /= length(shadowClipPos.xy);
     shadowClipPos.xy*=distortionFactor;
-  shadowClipPos.z *= 0.125; // increases shadow distance on the Z axis, which helps when the sun is very low in the sky
+  shadowClipPos.z *= 0.025; // increases shadow distance on the Z axis, which helps when the sun is very low in the sky
 
   return shadowClipPos;
 }

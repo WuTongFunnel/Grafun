@@ -7,7 +7,7 @@ uniform sampler2D dhDepthTex0;
 uniform mat4 dhProjection;
 uniform mat4 dhProjectionInverse;
 
-// dhDepthTex1 is already declared in 00_globals_and_fog_coefficients.glsl.
+// dhDepthTex1 is already declared in 00_globals.glsl.
 // Native and DH depth have DIFFERENT near/far planes. Never compare their raw
 // values or unproject DH depth with gbufferProjectionInverse.
 vec3 gfDhViewPosition(vec2 uv, float depth)

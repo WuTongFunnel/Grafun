@@ -13,7 +13,7 @@ Lcolor = vec4(log2(luminance), 0.0, 0.0, 1.0);
 
     float alpha_g=texture(colortex8, texcoord).g;
      finalcolor = texture(colortex0, texcoord);
- /*            			#ifdef DISTANT_HORIZONS
+            			#ifdef DISTANT_HORIZONS
 if(gfDhFrontSky(texcoord))
 #else
 if(texture(depthtex0, texcoord).r==1.0)
@@ -61,6 +61,6 @@ vec3 reflect_color=avgColor.rgb;
     finalcolor.rgb+=wetness*reflect_color;
         return;
     }
-finalcolor.rgb+=reflect_color;*/
+finalcolor.rgb+=reflect_color;
 
 }

@@ -249,9 +249,8 @@ vec3 taa(vec3 Color)
         );
     }
 #endif
-#ifdef Realtime_Sky
     //==================================================
-    // Sky TAA
+    // Background TAA
     //==================================================
     if(depth == 1.0)
     {
@@ -309,7 +308,6 @@ vec3 taa(vec3 Color)
             a
         );
     }
-#endif
     return Color;
 }
 float LinearToWindowDepth(float linDepth)

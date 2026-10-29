@@ -21,4 +21,5 @@ color.rgb = texture2DLod(colortex0, texcoord, 0.0).rgb;
 		  return;
 	   }
     #endif
+
 }

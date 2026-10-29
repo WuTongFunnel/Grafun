@@ -1,5 +1,5 @@
-float cloudbottom=0.015*MC_atom_height+MC_r ;
-float cloudtop=0.04*MC_atom_height+MC_r ;
+float cloudbottom = MC_r + 1500.0;
+float cloudtop = MC_r + 4000.0;
 
 
 vec3 cloudMod289(vec3 x)
@@ -266,7 +266,7 @@ return normalized_height*density;
 
 float cloudsigema(vec3 p)
 {
-    const float CloudreferenceScattering = 0.00125;
+    const float CloudreferenceScattering = 0.001;
 
     return cloudDensity(p) *
            CloudreferenceScattering;
@@ -313,12 +313,12 @@ if(rm_all_l<0.1)
     return t;
 }
 vec3 rm_v = normalize(endpostion-beginpostion);
-float rm_t=16;
+float rm_t=8;
 float rm_dx=rm_all_l/rm_t;
 float cloud_phase = dot(rm_v, sun_world); 
 float cloud_mie_g = 0.75;
 float g1 = cloud_mie_g, g2 = -cloud_mie_g, k = 0.5;
-float cloud_mie_phase = k*(1.-g1*g1)/(4.*PI*pow(1.+g1*g1-2.*g1*cloud_phase,1.5)) + (1.-k)*(1.-g2*g2)/(4.*PI*pow(1.+g2*g2-2.*g2*cloud_phase,1.5));
+float cloud_mie_phase =(1.0/(4*PI));
 vec3 rm_p=endpostion;
 float dxmeter=(rm_dx)*earth_factor;
 for(int i=1;i<rm_t+1;i++)
@@ -421,7 +421,14 @@ float cloudSunTransmittance(
 
     return T;
 }
-vec3 cloudfog(vec3 color,vec3 beginpostion,vec3 endpostion)
+// Geometrical earth occultation only. No atmospheric visibility, extinction or fog.
+float cloudSunVisible(vec3 point, vec3 toSun)
+{
+    vec2 hit = sphereIntersect(point + normalize(toSun) * 0.05, toSun, MC_r);
+    return hit.x > 0.0 ? 0.0 : 1.0;
+}
+
+vec3 integrateCloudVolume(vec3 color,vec3 beginpostion,vec3 endpostion)
 {
 vec3 allcolor = color;
 float rm_all_l = length(endpostion - beginpostion);
@@ -430,20 +437,20 @@ if(rm_all_l<0.1)
     return allcolor;
 }
 vec3 rm_v = normalize(endpostion-beginpostion);
-float rm_t=64; // Temporary real-time density test; raise to 64-128 after comparison.
+float rm_t=16; // Temporary real-time density test; raise to 64-128 after comparison.
 float rm_dx=rm_all_l/rm_t;
 float cloud_phase = dot(rm_v, sun_world); // cosTheta
-float cloud_mie_g = 0.75;
+float cloud_mie_g = 0.375;
 float g1 = cloud_mie_g, g2 = -cloud_mie_g, k = 0.5;
-float cloud_mie_phase = k*(1.-g1*g1)/(4.*PI*pow(1.+g1*g1-2.*g1*cloud_phase,1.5)) + (1.-k)*(1.-g2*g2)/(4.*PI*pow(1.+g2*g2-2.*g2*cloud_phase,1.5));
+float cloud_mie_phase =(1.0/(4*PI));
 
 vec3 rm_p=endpostion;
 float dxmeter=(rm_dx)*earth_factor;
 for(int i=1;i<rm_t+1;i++)
 {
 rm_p-=rm_v*rm_dx;
-float sun_to_rm_p = sunRayAtmLength(rm_p, sun_world);
-  vec3 p_suncolor=light_color*scatterf(sun_to_rm_p/MC_atom_height)*(1-fog_kk(sun_to_rm_p/MC_atom_height,sun_theta_s));
+
+  vec3 p_suncolor=light_color*onlyafterT(rm_p, sun_world);
 
 
   float sigmaS = cloudsigema(rm_p);
@@ -455,14 +462,13 @@ float sun_to_rm_p = sunRayAtmLength(rm_p, sun_world);
 
 p_suncolor *= sunCloudT;
 vec3 p_allcolor=  p_suncolor;
-  p_suncolor*=sunCanReachPoint(rm_p, sun_world);
+  p_suncolor*=cloudSunVisible(rm_p, sun_world);
 float opticalDepth = sigmaS * dxmeter;
 float T = exp(-opticalDepth);
 float optical=1-T;
 allcolor*=T;
 allcolor+=(p_suncolor*cloud_mie_phase)*optical;
- vec3 g_color=p_allcolor*opticalDepth*(1.0/(4*PI));
-allcolor+= g_color;
+allcolor+=p_allcolor*cloud_mie_phase*optical;
 }
 return allcolor;
 }
@@ -543,7 +549,7 @@ vec3 cloud(
         innerHit.x >= outerB
     )
     {
-        return cloudfog(
+        return integrateCloudVolume(
             color,
             rayOrigin + dir * outerA,
             rayOrigin + dir * outerB
@@ -557,7 +563,7 @@ vec3 cloud(
     // 进入内球前的云层
     if (innerA > outerA)
     {
-        color = cloudfog(
+        color = integrateCloudVolume(
             color,
             rayOrigin + dir * outerA,
             rayOrigin + dir * innerA
@@ -567,7 +573,7 @@ vec3 cloud(
     // 离开内球后的云层
     if (outerB > innerB)
     {
-        color = cloudfog(
+        color = integrateCloudVolume(
             color,
             rayOrigin + dir * innerB,
             rayOrigin + dir * outerB
