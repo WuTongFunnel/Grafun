@@ -126,7 +126,7 @@ void calculateVertexCommon()
 #else
     sun_see_color = light_color / (2.0 * PI * (1.0 - cos(radians(0.25 * float(SUN_SIZE) / 100.0))));
 #endif
-    moonk = (1.0 / 40000.0) * (1.0 + cos(moon_phase));
+    moonk =0* (1.0 / 40000.0) * (1.0 + cos(moon_phase));
     moon_color = 0.5 * sunk * moonk * sun_origin_base_color;
 #if MOONLIGHT_BRIGHTNESS != 100
     moon_color *= float(MOONLIGHT_BRIGHTNESS) / 100.0;

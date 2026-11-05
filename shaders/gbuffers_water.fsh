@@ -29,11 +29,13 @@ void main() {
 	}
 	lightmapData = vec4(lmcoord, 0.0, 1.0);
 encodedNormal = vec4(normal * 0.5 + 0.5, 1.0);
-	alpha=vec4(color.a,0,0,1);
-	color.a=1;
-	alpha.g=0;
-		if(isWater>0.5)
-	{
-		alpha=vec4(0.125,0,0,1);
-	}
+	// colortex8.b: dedicated water marker, independent of glass/SSR alpha.
+    // White transmission means no water tint or absorption.
+    alpha = vec4(color.a, 0.0, 0.0, 1.0);
+    color.a = 1.0;
+    if (isWater > 0.5)
+    {
+        color = vec4(1.0);
+        alpha = vec4(1.0, 0.0, 1.0, 1.0);
+    }
 }

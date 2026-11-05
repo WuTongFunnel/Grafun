@@ -35,12 +35,24 @@ const int colortex15Format = RGBA16F;
 
 layout(location = 0) out vec4 color;
 layout(location = 1) out vec4 worldpos;
+float skyVisible(vec3 n)
+{
+    float cosTheta = clamp(
+        dot(normalize(n), vec3(0.0, 1.0, 0.0)),
+        -1.0, 1.0
+    );
 
+    float alpha = acos(cosTheta);
+
+    return 1.0 - alpha / PI;
+}
 void main() {
 
   	color = texture(colortex0, texcoord);
+
 	float ao=color.a*color.a;
 	color.rgb = pow(color.rgb, vec3(2.2));
+
 		float depth = texture(depthtex1, texcoord).r;
 		float dhdepth=texture(dhDepthTex1,texcoord).r;
 	 //天空处理
@@ -105,11 +117,8 @@ vec3 shadowViewPos = (shadowModelView * vec4(feetPlayerPos, 1.0)).xyz;
 	vec4 shadowClipPos = shadowProjection * vec4(shadowViewPos, 1.0);
 	float pl=length(temp_pixel_world_pos.xz);
 
-shadow= getSoftShadow(shadowClipPos,0.005); 
-#ifdef DISTANT_HORIZONS
-// Native water, if present, replaces the front position in composite2.
-if (dhOpaque)shadow=vec3(1);
-#endif
+shadow= getSoftShadow(shadowClipPos,0.0075); 
+
 }
 
 //light
@@ -142,7 +151,8 @@ skylightColor = abs(normal.x) * Lx + abs(normal.y) * Ly + abs(normal.z) * Lz;
 #endif
 float realsky=pow(light.g,2);
 	vec3 skylight=(skylightColor)*realsky;
-	vec3 ambient=realsky*clamp(dot(normal,vec3(0,-1,0)),0,1)*realsky*vec3(AMBIENT_COEFFICIENT)*(clamp(dot(sun_world,vec3(0,1,0)),0,1)*sunlightColor+moonlightcolor*clamp(dot(-sun_world,vec3(0,1,0)),0,1));
+		float skyvisblef=skyVisible(normal);
+	vec3 ambient=realsky*(1-skyvisblef)*realsky*vec3(AMBIENT_COEFFICIENT)*(clamp(dot(sun_world,vec3(0,1,0)),0,1)*sunlightColor+moonlightcolor*clamp(dot(-sun_world,vec3(0,1,0)),0,1));
 vec3 finallight=blocklight+sunlight+moonlight+right_hand_light+skylight*ao+ambient+ambient*(1-ao);
 color.rgb *=(finallight/PI);
 

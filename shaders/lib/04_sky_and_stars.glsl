@@ -11,7 +11,7 @@ vec4 skybackground(vec3 pixel_world, vec2 texcoord, float depth, float r)
   color.rgb=starcolor.rgb;
   return  color;
 }
-    if (depth >= 0.999999)
+    if (depth ==1.0)
     {
         color.rgb = STAR_BRIGHTNESS * sunk * (1.0 / 400000.0) * texture(starmap, uv).rgb;
         vec4 sunDisc = texture(colortex11, texcoord);

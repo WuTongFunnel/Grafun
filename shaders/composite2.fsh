@@ -68,6 +68,13 @@ if (dhFront)
 }
 #endif
 worldpos=vec4(temp_pixel_world_pos,1);
+// Water is an ideal clear dielectric interface: no diffuse/ambient lighting.
+// Keep front worldpos for later refraction-free air/SSR evaluation.
+if (texture(colortex8, texcoord).b > 0.5)
+{
+    color = vec4(0.0);
+    return;
+}
 vec3 pixel_world=temp_pixel_world_pos+cameraPosition;
 		vec3 p = pixel_world;
 // Direct solar and lunar lighting, without sky irradiance.

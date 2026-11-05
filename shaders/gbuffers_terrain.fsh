@@ -29,7 +29,7 @@ void main() {
 	watercolor=vec4(1,1,1,0);
 		if(renderStage==MC_RENDER_STAGE_RAIN_SNOW)
 	{
-		color =vec4(1,1,1,1);
+		//color =vec4(1,1,1,1);
 	}
 	ivec2 pixel = ivec2(gl_FragCoord.xy);
 	color = texture(gtexture, texcoord) * glcolor;

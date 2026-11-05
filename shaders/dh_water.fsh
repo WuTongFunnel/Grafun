@@ -46,7 +46,7 @@ void main()
     if (glcolor.a < 0.001)
         discard;
 
-    color = vec4(glcolor.rgb, 1.0);
+    color = isWater > 0.5 ? vec4(1.0) : vec4(glcolor.rgb, 1.0);
 
     lightmapData = vec4(lmcoord, 0.0, 1.0);
 
@@ -55,10 +55,11 @@ void main()
         1.0
     );
 
+    // Match native water: R = reflection eligibility, B = water material flag.
     alpha = vec4(
-        isWater > 0.5 ? 0.125 : glcolor.a,
+        isWater > 0.5 ? 1.0 : glcolor.a,
         0.0,
-        0.0,
+        isWater > 0.5 ? 1.0 : 0.0,
         1.0
     );
 }

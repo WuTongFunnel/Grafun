@@ -11,8 +11,11 @@ uniform sampler2D shadowtex0;
 uniform sampler2D shadowtex1;
 uniform sampler2D perlin;
 uniform sampler2D transmittance;
+uniform sampler2D multiscattering;
+uniform sampler2D ozone;
 uniform sampler2D starmaplight;
 uniform sampler3D cloudNoiseTex;
+uniform sampler2D Earthpicture;
 const int shadowMapResolution =4096; // [512 1024 2048 4096 8192]
 const bool shadowtex0Nearest = true;
 const bool shadowtex1Nearest = true;

@@ -19,7 +19,7 @@ float maxl =texture2DLod(colortex7, vec2(0.5,0.5), floor(log2(min(viewHeight, vi
     float mint = sunk * 0.0000000375*(0.18/0.5);
 #else
     float maxt = sunk * 0.05*(0.18/0.5);
-    float mint = sunk * 0.000004*(0.18/0.5);
+    float mint = sunk * 0.0002*(0.18/0.5);
 #endif
 
 if (nightVision != 0.0)

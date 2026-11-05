@@ -2,7 +2,6 @@
 #include "/lib/function.glsl"
 uniform mat4 gbufferPreviousProjection;
 uniform mat4 gbufferPreviousModelView;
-uniform vec3 previousCameraPosition;
 uniform mat4 dhPreviousProjection;
 in vec2 texcoord;
 /* RENDERTARGETS: 0,10*/
@@ -91,6 +90,8 @@ vec4 findBestHistoryColorRGB(vec2 pretexcoord, vec3 currentColor)
         {
             ivec2 px = basePixel + ivec2(dx, dy);
             px = clamp(px, ivec2(0), ivec2(res)-ivec2(1));
+            // Skip the two Earth state pixels in the temporal history.
+            if (px.y == 0 && px.x <= 1) continue;
             vec4 hist = texelFetch(colortex10, px, 0);
             float diff = length(hist.rgb - currentColor);
             if(diff < minDiff)
@@ -104,6 +105,9 @@ vec4 findBestHistoryColorRGB(vec2 pretexcoord, vec3 currentColor)
 }
 vec3 taa(vec3 Color)
 {
+    // Avoid bilinear TAA reads from the two reserved state texels.
+    if (gl_FragCoord.x < 4.0 && gl_FragCoord.y < 3.0)
+        return Color;
     float depth = texture(depthtex0, texcoord).r;
     float a = 0.03;
     //==================================================
@@ -320,6 +324,19 @@ float LinearToWindowDepth(float linDepth)
 }
 void main()
 {
+    ivec2 px = ivec2(gl_FragCoord.xy);
+    if (all(equal(px, GF_EARTH_ROTATION_PIXEL)))
+    {
+        finalColor = vec4(texture(colortex0, texcoord).rgb, 1.0);
+        preColor = gfEarthFramePose();
+        return;
+    }
+    if (all(equal(px, GF_EARTH_MARKER_PIXEL)))
+    {
+        finalColor = vec4(texture(colortex0, texcoord).rgb, 1.0);
+        preColor = vec4(GF_EARTH_MARKER, float(frameCounter % 65536));
+        return;
+    }
     vec3 fColor = texture(colortex0, texcoord).xyz;
 #ifdef TAA
     vec3 taaResult = taa(fColor);

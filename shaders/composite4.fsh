@@ -73,7 +73,7 @@ void main()
 #endif
 
    
-const int ATMOSPHERE_STEPS = 64;
+const int ATMOSPHERE_STEPS = 16;
 
 // 不透明物体的光照
 float opaqueLight = pow(
@@ -85,20 +85,55 @@ float translucentLight = pow(
     texture(colortex4, texcoord).g, 2.0
 );
 
-// 天空颜色
+// The sky is generated ONLY here (not inside atmosphere()).
+// Independently rendered Earth overwrites background stars on a hit.
 if (frontSky)
 {
-    if (length(sceneColor) <= 0.000001)
-    {
-        sceneColor += sky(
-            texcoord, 1.0, camera_r
-        ).rgb;
-    }
+    sceneColor += sky(texcoord, 1.0, camera_r).rgb;
+
+    vec4 planet = renderEarth(vec3(0.0), pixel_world_pos0);
+    if (planet.a > 0.5)
+        sceneColor = planet.rgb;
 }
 
 vec3 result;
+bool isWater = texture(colortex8, texcoord).b > 0.5;
 
-if (hasTransparentLayer && !frontSky)
+if (isWater && hasTransparentLayer && !frontSky)
+{
+    // White, unabsorbing transmission. Do NOT fog two overlapping segments
+    // or add the diffuse translucent layer (the old branch double-counted it).
+    // A continuous ray through the transparent surface sees the opaque/sky
+    // background and only the atmosphere in front of that background.
+    vec3 rayDirection = pixel_world_pos0;
+    if (dot(rayDirection, rayDirection) <= 1e-8)
+        rayDirection = pixel_world_pos1;
+    if (dot(rayDirection, rayDirection) <= 1e-8)
+        rayDirection = vec3(0.0, 1.0, 0.0);
+    rayDirection = normalize(rayDirection);
+
+    vec3 backgroundColor = backSky
+        ? sky(texcoord, 1.0, camera_r).rgb
+        : sceneColor;
+
+    if (backSky)
+    {
+        // Keep the independently shaded planet in front of distant stars.
+        vec4 backPlanet = renderEarth(vec3(0.0), rayDirection);
+        if (backPlanet.a > 0.5)
+            backgroundColor = backPlanet.rgb;
+    }
+
+    result = atmosphere(
+        vec3(0.0),
+        backSky ? rayDirection : pixel_world_pos1,
+        backgroundColor,
+        backSky ? 1.0 : 0.5,
+        ATMOSPHERE_STEPS,
+        backSky ? 1.0 : opaqueLight
+    );
+}
+else if (hasTransparentLayer && !frontSky)
 {
     // 第一段：相机 -> 半透明物体
     // 这一段对应半透明表面，使用 colortex4
@@ -129,9 +164,17 @@ if (hasTransparentLayer && !frontSky)
     {
         backDirection = normalize(backDirection);
 
+        // Behind the translucent layer, independently shade the Earth.
+        // Only use the main-pass sky color when the globe is not in the way.
         vec3 backColor = backSky
             ? sky(texcoord, 1.0, camera_r).rgb
             : sceneColor;
+        if (backSky)
+        {
+            vec4 backPlanet = renderEarth(pixel_world_pos0, backDirection);
+            if (backPlanet.a > 0.5)
+                backColor = backPlanet.rgb;
+        }
 
         vec3 backAtmosphere = atmosphere(
             pixel_world_pos0,
@@ -163,5 +206,5 @@ else
 }
 
 finalcolor = vec4(result, 1.0);
-
+   // finalcolor.rgb= cloud(vec3(0),pixel_world_pos0,finalcolor.rgb, 1);
 }

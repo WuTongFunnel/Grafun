@@ -10,9 +10,7 @@ out vec3 normal;
 void main() {
     calculateVertexCommon();
  	vec4 p=ftransform();
-  p=gbufferModelViewInverse*gbufferProjectionInverse*p;
-vec4 fp=spherical_mapping(p);
- gl_Position = gbufferProjection*gbufferModelView*fp;
+ gl_Position = p;
 
 	texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
 	lmcoord = (gl_TextureMatrix[1] * gl_MultiTexCoord1).xy;

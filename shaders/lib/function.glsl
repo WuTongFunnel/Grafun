@@ -10,6 +10,7 @@
 #include "/lib/03_moon.glsl"
 #include "/lib/04_sky_and_stars.glsl"
 #include "/lib/08_vignette.glsl"
+#include "/lib/14_earth_rotation.glsl"
 #include "/lib/07_Atomsphere.glsl"
 #include "/lib/12_cloud.glsl"
 #endif // GRAFUN_FUNCTION_GLSL

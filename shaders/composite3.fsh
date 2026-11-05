@@ -10,6 +10,12 @@ void main() {
      float alpha_g=texture(colortex8, texcoord).g;
     vec4 alpha_color = texture(colortex3, texcoord);
     vec4 color = texture(colortex0, texcoord);
+    // Full transmission: leave the already shaded scene behind water unchanged.
+    if (texture(colortex8, texcoord).b > 0.5)
+    {
+        finalcolor = color;
+        return;
+    }
     float depth = texture(depthtex1, texcoord).r;
    
 alpha_color.rgb = pow(alpha_color.rgb, vec3(2.2));

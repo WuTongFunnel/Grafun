@@ -1,4 +1,3 @@
-
 const float EPS = 1e-6;
 
 
@@ -223,7 +222,9 @@ vec4 opticalDepthColor(float cosvalue,float r)
 {
 
 float u=clamp(0.5*cosvalue+0.5,0.0,1.0),v=clamp((r-MC_r)/MC_atom_height,0.0,1);
-return texture(transmittance,vec2(u,v));
+vec4 ocolor=texture(transmittance,vec2(u,v));
+
+return ocolor;
 }
 vec4 getOpticalDepth(vec3 P, vec3 dir)
 {
@@ -279,6 +280,7 @@ vec2 intersectGround(vec3 ro, vec3 rd)
 // Mie 散射相函数（Henyey-Greenstein）
 float miePhase(float cosTheta)
 {
+    
     const float mie_g = 0.76;
 
     float g2 = mie_g * mie_g;
@@ -287,15 +289,49 @@ float miePhase(float cosTheta)
            (1.0 - g2) /
            pow(1.0 + g2 - 2.0 * mie_g * cosTheta, 1.5);
 }
+vec3 getOzoneOpticalDepth(vec3 P, vec3 dir)
+{
+
+  //return vec3(0.0);
+    vec3 OP = P - earth_core_position;
+    float r = length(OP);
+
+    if (r > MC_ar)
+    {
+        dir = normalize(dir);
+
+        float nt = intersectEarth(dir, P).x;
+        if (nt < 0.0)
+            return vec3(0.0);
+
+        P += nt * dir;
+        OP = P - earth_core_position;
+        r = length(OP);
+    }
+
+    vec3 up = OP / max(r, 1e-6);
+    float mu = dot(up, normalize(dir));
+
+    vec2 uv = vec2(
+        clamp(0.5 * mu + 0.5, 0.0, 1.0),
+        clamp((r - MC_r) / MC_atom_height, 0.0, 1.0)
+    );
+
+    return texture(ozone, uv).rgb;
+}
 vec3 onlyafterT(vec3 P, vec3 dir)
 {
     vec4 tau = getOpticalDepth(P, dir);
 
-    return exp(-(tau.rgb + vec3(tau.a)));
+    vec3 ozoneTau = getOzoneOpticalDepth(P, dir);
+
+    return exp(-(
+        tau.rgb +
+        vec3(tau.a) +
+        ozoneTau
+    ));
 }
-// Integrate extinction over a local segment instead of subtracting two
-// large, interpolated LUT optical depths near the horizon.
-// Two-point Gaussian quadrature improves accuracy over a single midpoint.
+
 vec4 grafunSegmentTau(vec3 segmentMid, vec3 rayDir, float ds)
 {
     const float k = 0.2886751345948129; // 1/(2*sqrt(3))
@@ -317,9 +353,64 @@ vec4 grafunSegmentTau(vec3 segmentMid, vec3 rayDir, float ds)
     return vec4(vec3(0.005802, 0.013558, 0.0331) * (rCol * km),
                 0.003996 * (mCol * km));
 }
+vec3 grafunSegmentOzoneTau(
+    vec3 segmentMid,
+    vec3 rayDir,
+    float ds
+)
+{
+    const float k = 0.2886751345948129; // 1/(2*sqrt(3))
+
+    // Two-point Gauss-Legendre nodes
+    vec3 p0 = segmentMid - rayDir * (ds * k);
+    vec3 p1 = segmentMid + rayDir * (ds * k);
+
+    // Altitude: world units -> km
+    float h0 = (length(p0 - earth_core_position) - MC_r)
+             * earth_factor * 0.001;
+
+    float h1 = (length(p1 - earth_core_position) - MC_r)
+             * earth_factor * 0.001;
+
+    // Triangular ozone density profile: 10~40 km, peak at 25 km
+    float o0 = clamp(
+        1.0 - abs(h0 - 25.0) / 15.0,
+        0.0, 1.0
+    );
+
+    float o1 = clamp(
+        1.0 - abs(h1 - 25.0) / 15.0,
+        0.0, 1.0
+    );
+
+    // Hillaire ozone absorption coefficients [R,G,B], km^-1
+    const vec3 betaOzone = vec3(
+        0.000650,
+        0.001881,
+        0.000085
+    );
+
+    // meters -> km, including Gauss weight 1/2
+    float km = ds * earth_factor * 0.0005;
+
+    return betaOzone * ((o0 + o1) * km);
+}
   vec4 sun_pixel = gbufferProjection * vec4(sun_view, 1.0);
        vec4 nsun_pixel = sun_pixel/sun_pixel.w;
         vec2 SunUv = nsun_pixel.xy * 0.5 + 0.5;
+        vec3 point_mulitscatter(vec3 p,vec3 sun_world)
+        {
+            
+       vec3 OP = p - earth_core_position;
+    float r = length(OP);
+    vec3 dir=OP/r;
+    float psun_thetac=dot(dir,sun_world);
+float u=clamp(0.5*psun_thetac+0.5,0.0,1.0);
+   float  h=clamp((r-MC_r)/MC_atom_height,0.0,1);
+   float v=sqrt(h);
+   return texture(multiscattering,vec2(u,v)).rgb;
+
+        }
 vec3 Atomfog(
     vec3 color,
     vec3 startPos,
@@ -372,19 +463,26 @@ vec3 Atomfog(
         endPos,
         rm_v
     );
-
+   vec3 Ozonebacksigema = getOzoneOpticalDepth(
+        endPos,
+        rm_v
+    );
     vec4 frontsigema = vec4(0);
+    vec3 Ozonefrontsigema = vec3(0);
     for (int i = 1; i < rm_t + 1; i++)
     {
+  
+         vec3 shadow=vec3(1,1,1);
+    
         float rm_r = length(rm_p - earth_core_position);
         vec3 checkTp = rm_p - 0.5 * rm_v * rm_dx;
 
         frontsigema = getOpticalDepth(checkTp, rm_v);
-
+        Ozonefrontsigema = getOzoneOpticalDepth(checkTp, rm_v);
         vec4 rm_p_sigema =frontsigema - backsigema;
- if(any(lessThan(rm_p_sigema, vec4(0.35))))
- {rm_p_sigema = grafunSegmentTau(rm_p, rm_v, rm_dx);}
-
+         vec3 Ozonerm_p_sigema=Ozonefrontsigema-Ozonebacksigema;
+ if(any(lessThan(rm_p_sigema, vec4(0.4)))){rm_p_sigema = grafunSegmentTau(rm_p, rm_v, rm_dx);}
+//if(any(lessThan(Ozonerm_p_sigema, vec3(0.4)))){Ozonerm_p_sigema=grafunSegmentOzoneTau(rm_p, rm_v, rm_dx);}
         vec3 ocolor = allcolor;
         vec3 scatter_color = vec3(0);
 
@@ -397,12 +495,12 @@ vec3 Atomfog(
 
         vec3 rm_p_rT = exp(-rm_p_sigema.rgb);
         float rm_p_mT = exp(-rm_p_sigema.a);
-
-        vec3 rm_p_T = rm_p_rT * rm_p_mT;
+     vec3 rm_p_OzoneT = exp(-Ozonerm_p_sigema);
+        vec3 rm_p_T = rm_p_rT * rm_p_mT*rm_p_OzoneT;
 
         ocolor *= rm_p_T;
 
-        float m_s = 0.5;
+        float m_s = 0.92;
 
         float visble = sunCanReachPoint(rm_p, sun_world);
         float moon_visble = 0.0;
@@ -413,67 +511,62 @@ vec3 Atomfog(
 
         // 太阳大气散射
         scatter_color +=
-            (1 - rm_p_rT) * sun_r_phase * p_suncolor * visble;
+            (1 - rm_p_rT) * sun_r_phase * p_suncolor * visble*shadow;
 
-        scatter_color +=
-            m_s * (1 - rm_p_mT) * sun_m_phase * p_suncolor * visble;
-
-        vec3 highscatter_color =
-            (1.0 / (4 * PI)) *
-            ((1 - rm_p_rT) + m_s * (1 - rm_p_mT)) *
-            p_suncolor * visble;
-
+        scatter_color += m_s * (1 - rm_p_mT) * sun_m_phase * p_suncolor * visble*shadow;
+#ifndef Highscatter
+        vec3 highscatter_color = light_color*point_mulitscatter(rm_p,sun_world)*((1 - rm_p_rT) + m_s * (1 - rm_p_mT) );
         scatter_color += highscatter_color;
+#endif
 
         // 仅在 sunangle > 0.5 时累积月光散射。
         if (moonEnabled)
         {
             scatter_color +=
-                (1 - rm_p_rT) * moon_r_phase * p_mooncolor * moon_visble;
+                (1 - rm_p_rT) * moon_r_phase * p_mooncolor * moon_visble*shadow;
 
             scatter_color +=
-                m_s * (1 - rm_p_mT) * moon_m_phase * p_mooncolor * moon_visble;
-
-            vec3 moon_highscatter_color =
-                (1.0 / (4 * PI)) *
-                ((1 - rm_p_rT) + m_s * (1 - rm_p_mT)) *
-                p_mooncolor * moon_visble;
-
+                m_s * (1 - rm_p_mT) * moon_m_phase * p_mooncolor * moon_visble*shadow;
+#ifndef Highscatter
+            vec3 moon_highscatter_color =  moon_color *point_mulitscatter(rm_p,-sun_world)*((1 - rm_p_rT) + m_s * (1 - rm_p_mT) );
             scatter_color += moon_highscatter_color;
+            #endif
         }
 
         // 局部雾气
-        //if (rm_r < MC_r+80 )
+    if (rm_r < MC_r+80 )
         {
-            vec3 rm_shadowViewPos = (shadowModelView * vec4(rm_p, 1.0)).xyz;
+
+     {
+     vec3 rm_shadowViewPos = (shadowModelView * vec4(rm_p, 1.0)).xyz;
 	vec4 rm_shadowClipPos = shadowProjection * vec4(rm_shadowViewPos, 1.0);
      rm_shadowClipPos.z -= 0.000001;
       // apply bias
       rm_shadowClipPos.xyz = distortShadowClipPos(rm_shadowClipPos.xyz);
       vec3 rm_shadowNDCPos=rm_shadowClipPos.xyz/rm_shadowClipPos.w;
             vec3 rm_shadowScreenPos = rm_shadowNDCPos * 0.5 + 0.5;
-      vec3 shadow=vec3(1,1,1);
 bool inShadowFrustum = all(lessThan(abs(rm_shadowNDCPos.xyz), vec3(1.0)));
 if(inShadowFrustum){
     vec3 rm_shadowScreenPos = rm_shadowNDCPos * 0.5 + 0.5;
     shadow = getShadow(rm_shadowScreenPos); 
 }
+    }
             float sigmaS = localsigema(rm_p);
             float dxmeter = rm_dx;
             float opticalDepth = sigmaS * dxmeter;
             float T = exp(-opticalDepth);
             float optical = 1 - T;
 
-            ocolor *= T;
+           ocolor *= T;
 
-            scatter_color += p_suncolor * sun_m_phase * optical*visble*shadow;
+           scatter_color += p_suncolor * sun_m_phase * optical*visble*shadow;
             if (moonEnabled)
             {
                 scatter_color += p_mooncolor * moon_m_phase * optical*moon_visble*shadow;
             }
             
             vec3 g_color = p_suncolor * opticalDepth;
-            scatter_color += g_color * (1.0 / (4 * PI))*visble*light;
+           scatter_color += g_color * (1.0 / (4 * PI))*visble*light;
 
             if (moonEnabled)
             {
@@ -484,36 +577,99 @@ if(inShadowFrustum){
 
         rm_p -= rm_v * rm_dx;
         backsigema = frontsigema;
+        Ozonebacksigema=Ozonefrontsigema;
         allcolor = ocolor + scatter_color;
     }
 
     return allcolor;
 }
+float pingpong(float t, float a)
+{
+    float m = mod(t, 2.0 * a);
+    return a - abs(m - a);
+}
 
-// ============================================================
+// Earthpicture uses a standard equirectangular full-globe atlas.
+// The quaternion supplies a continuous globe pose, also after travelling
+// across either geographic pole. Do NOT fold latitude or reverse movement.
+//
+// At the poles longitude is undefined (atan(0,0)); choose a finite value.
+// Also keep V half a texel away from the poles: if Earthpicture uses GL_REPEAT
+// vertically, sampling exactly V=0/1 would interpolate the opposite pole.
+vec2 earthSphericalUV(vec3 localNormal)
+{
+    vec4 q = gfEarthFramePose();
+    vec3 globeNormal = normalize(gfEarthRotateVector(q, normalize(localNormal)));
+
+    float horizontalRadius = length(globeNormal.xy);
+    float longitude = (horizontalRadius > 1e-7)
+        ? atan(globeNormal.x, globeNormal.y)
+        : 0.0;
+    float latitude = atan(globeNormal.z, horizontalRadius);
+
+    // Full latitude range [-PI/2,+PI/2] must span the entire V range [0,1].
+    // Keep existing east/west direction and 0.77 atlas offset unchanged.
+    float u = fract(0.8 + longitude / (2.0 * PI));
+    float v = 0.395 + latitude / PI;
+
+    float texHeight = float(max(textureSize(Earthpicture, 0).y, 1));
+    float halfTexelV = 0.5 / texHeight;
+    return vec2(u, clamp(v, halfTexelV, 1.0 - halfTexelV));
+}
+
+
+// Earth surface skylight retains the original hemisphere integration helpers.
+// Forward declarations: definitions are intentionally retained below.
+vec3 HammersleyCosHemisphereDir(uint i, uint sampleTotal, vec3 N);
+vec3 subAtomfog(vec3 color, vec3 rayOrigin, vec3 pixel_world, float depth);
+
 vec3 earth(
     vec3 groundPoint,
     vec3 viewDir
 )
 {
-    //return vec3(0);
+        vec3 normal = normalize(
+        groundPoint - earth_core_position
+    );
+
+    // 直接对球面法线做球面经纬度映射，不再将球面展开为平面。
+    // Earthpicture 应为标准的等距圆柱（经纬度）全球纹理。
+    vec2 earthuv = earthSphericalUV(normal);
+    vec3 earthcolor = pow(texture(Earthpicture, earthuv).rgb, vec3(2.2));
+    if (E(earthcolor) > 0.006)
+    {
+        // Preserve the Earth diffuse skylight used in the earlier Grafun version.
+        vec3 sunlight =
+            clamp(dot(sun_world, normal), 0.0, 1.0)
+            * light_color;
+                vec3 moonlight =
+            clamp(dot(-sun_world, normal), 0.0, 1.0)
+            * moon_color;
+        vec3 skylightColor = vec3(0.0);
+  //sunlight*=onlyafterT(groundPoint, sun_world);
+  //moonlight*=onlyafterT(groundPoint, -sun_world);
+       /* const uint SKY_SAMPLES = 16u;
+        for (uint i = 0u; i < SKY_SAMPLES; ++i)
+        {
+            vec3 sampleDir = HammersleyCosHemisphereDir(i, SKY_SAMPLES, normal);
+            skylightColor += subAtomfog(skybackground(sampleDir, vec2(0.0, 9.0), 1.0, 1.0).rgb, groundPoint, sampleDir, 1.0);
+        }
+        skylightColor *= PI / float(SKY_SAMPLES);*/
+        return earthcolor * (moonlight+ sunlight+skylightColor ) / PI;
+    }
     // 反射大气固定步数，与主视线 steps 完全解耦。
     const int reflectionSteps = 16;
     // ========================================================
     // 1. 地球交点处的局部法线与反射方向
     // ========================================================
 
-    vec3 normal = normalize(
-        groundPoint - earth_core_position
-    );
 
     vec3 reflectedDir = normalize(
         reflect(viewDir, normal)
     );
 
-    // 当前暂时所有地表都视为海面。
-    // 以后区分陆地/海面时，将 true 替换为实际条件。
-    if (true)
+
+
     {
         // 反射方向必须朝地表外侧。
         if (dot(reflectedDir, normal) <= 0.0)
@@ -543,7 +699,7 @@ vec3 earth(
             reflectedOrigin
         );
 
-        vec3 reflectedSkyBase = skybackground(
+        vec3 reflectedSkyBase = onlyafterT(groundPoint, sun_world)*skybackground(
             vec3(
                 reflectedDir.x,
                 abs(reflectedDir.y),
@@ -615,6 +771,42 @@ vec3 earth(
     ).rgb;
 }
 
+
+// ============================================================
+// INDEPENDENT EARTH RENDERER: origin + direction ONLY
+// Return rgb = shaded planet, a = 1 if hit, 0 if no hit.
+// Keeps earth() material, hemisphere diffuse skylight and sea reflection.
+// ============================================================
+vec4 renderEarth(vec3 rayOrigin, vec3 viewDir)
+{
+    float rayLen = length(viewDir);
+    if (rayLen < 1e-6) return vec4(0.0);
+
+    vec3 dir = viewDir / rayLen;
+    vec2 hit = intersectGround(rayOrigin, dir);
+    if (hit.y < 0.0) return vec4(0.0);
+
+    float epsilon = max(1e-4, abs(MC_r) * 1e-7);
+    float radius = length(rayOrigin - earth_core_position);
+    float t = -1.0;
+
+    // Prefer the first front-facing intersection. When underground, the
+    // sphere exit is not an exterior Earth surface: keep the legacy view.
+    if (radius < MC_r - epsilon)
+        return vec4(0.0);
+
+    if (hit.x > epsilon)
+        t = hit.x;
+    else if (abs(radius - MC_r) <= epsilon && radius > 1e-5 &&
+             dot(dir, (rayOrigin - earth_core_position) / radius) < -1e-5 &&
+             hit.y > epsilon)
+        t = 0.0;
+
+    if (t < 0.0) return vec4(0.0);
+    vec3 surfacePoint = rayOrigin + dir * t;
+    return vec4(earth(surfacePoint, dir), 1.0);
+}
+
 vec3 atmosphere(
     vec3 rayOrigin,
     vec3 pixel_world,
@@ -624,284 +816,62 @@ vec3 atmosphere(
     float light
 )
 {
-    // ========================================================
-    // 0. 基础检查
-    // ========================================================
-
-    if (steps <= 0)
-        return color;
+    // This function NEVER shades the Earth and NEVER creates background stars.
+    // Its 'color' input is the scene/sky/Earth color already selected by caller.
+    if (steps <= 0) return color;
 
     vec3 rayVector = pixel_world - rayOrigin;
     float rayLength = length(rayVector);
-
-    if (rayLength < 1e-4)
-        return color;
+    if (rayLength < 1e-4) return color;
 
     vec3 dir = rayVector / rayLength;
-
-    // 不使用严格的 depth == 1.0 判断，
-    // 避免深度值存在微小误差时错误进入物体分支。
     bool isSky = depth >= 0.999999;
+    vec2 atmosphereHit = intersectEarth(dir, rayOrigin);
+    if (atmosphereHit.y <= 0.0) return color;
 
-    // ========================================================
-    // 1. 计算大气外球交点
-    //
-    // intersectEarth(direction, origin)
-    // 返回 vec2(近交点, 远交点)
-    // ========================================================
+    float startT = max(atmosphereHit.x, 0.0);
+    float endT = isSky
+        ? atmosphereHit.y
+        : min(atmosphereHit.y, rayLength);
+    float epsilon = max(1e-4, abs(MC_r) * 1e-7);
 
-    vec2 outerHit = intersectEarth(dir, rayOrigin);
-
-    if (outerHit.y <= 0.0)
-        return color;
-
-    float outerA = max(outerHit.x, 0.0);
-
-    // 天空射线延伸至大气外球；
-    // 非天空射线最多积分至当前物体。
-    float rayLimit = isSky
-        ? outerHit.y
-        : min(rayLength, outerHit.y);
-
-    float outerB = min(outerHit.y, rayLimit);
-
-    float surfaceEpsilon = max(
-        1e-4,
-        abs(MC_r) * 1e-7
-    );
-
-    if (outerB <= outerA)
-        return color;
-
-    vec3 atmosphereStart =
-        rayOrigin + dir * outerA;
-
-    vec3 atmosphereEnd =
-        rayOrigin + dir * outerB;
-
-    // ========================================================
-    // 2. 计算地球交点与相机位置
-    // ========================================================
-
-    vec3 cameraOffset =
-        rayOrigin - earth_core_position;
-
+    vec2 groundHit = intersectGround(rayOrigin, dir);
+    vec3 cameraOffset = rayOrigin - earth_core_position;
     float cameraRadius = length(cameraOffset);
+    bool insideEarth = cameraRadius < MC_r - epsilon;
+    bool atSurface = abs(cameraRadius - MC_r) <= epsilon;
 
-    vec3 cameraUp = cameraOffset /
-        max(cameraRadius, 1e-6);
-
-    bool cameraInsideEarth =
-        cameraRadius < MC_r - surfaceEpsilon;
-
-    bool cameraAtSurface =
-        abs(cameraRadius - MC_r) <= surfaceEpsilon;
-
-    float viewUp = dot(dir, cameraUp);
-
-    vec2 groundHit = intersectGround(
-        rayOrigin,
-        dir
-    );
-
-    float nearGroundT = groundHit.x;
-    float farGroundT  = groundHit.y;
-
-    // ========================================================
-    // 3. 相机位于地球内部
-    //
-    // 这是修复低于 54 格黑屏的关键分支。
-    //
-    // 相机在球内时：
-    //   近交点通常位于相机后方；
-    //   远交点才是射线离开地球的位置。
-    //
-    // 不积分地球内部，也不直接把黑色 color
-    // 当作天空射线离开地表后的背景。
-    // ========================================================
-
-    if (cameraInsideEarth)
+    if (insideEarth)
     {
-        float exitGroundT = farGroundT;
-
-        if (exitGroundT <= 0.0)
-        {
-            if (isSky)
-            {
-                return skybackground(
-                    vec3(dir.x, abs(dir.y), dir.z),
-                    vec2(0.0),
-                    1,
-                    0
-                ).rgb;
-            }
-
-            return color;
-        }
-
-        // 大气有效区间从地球出口开始。
-        float segmentStartT = max(
-            outerA,
-            exitGroundT
-        );
-
-        float segmentEndT = outerB;
-
-        // 没有有效的大气路径。
-        if (segmentEndT <= segmentStartT)
-        {
-            if (isSky)
-            {
-                return skybackground(
-                    vec3(dir.x, abs(dir.y), dir.z),
-                    vec2(0.0),
-                    1,
-                    0
-                ).rgb;
-            }
-
-            return color;
-        }
-
-        vec3 segmentStart =
-            rayOrigin + dir * segmentStartT;
-
-        vec3 segmentEnd =
-            rayOrigin + dir * segmentEndT;
-
-        // 天空必须从实际天空底色开始积分，
-        // 不能继续沿用可能已经为黑色的原始 color。
-        if (isSky)
-        {
-            vec3 skyBase = skybackground(
-                vec3(dir.x, abs(dir.y), dir.z),
-                vec2(0.0),
-                1,
-                0
-            ).rgb;
-
-            return Atomfog(
-                skyBase,
-                segmentStart,
-                segmentEnd,
-                steps,
-                light
-            );
-        }
-
-        // 非天空物体：
-        // 只计算地球出口之后到物体之间的大气。
-        return Atomfog(
-            color,
-            segmentStart,
-            segmentEnd,
-            steps,
-            light
-        );
+        // Preserve the previous underground handling: only integrate outside
+        // the solid globe, and do NOT synthesize skybackground here.
+        if (groundHit.y <= 0.0) return color;
+        startT = max(startT, groundHit.y);
     }
-
-    // ========================================================
-    // 4. 相机位于地表或地表外部
-    //
-    // 非天空物体：
-    // 只积分相机到物体的第一段大气。
-    //
-    // 天空：
-    // 若近侧地面交点在相机前方，
-    // 先计算第一段大气，再计算地面反射方向的大气。
-    // ========================================================
-
-    float groundT = -1.0;
-
-    // 4.1 正常的近侧地面交点。
-    if (
-        nearGroundT > surfaceEpsilon &&
-        nearGroundT >= outerA &&
-        nearGroundT < outerB
-    )
+    else
     {
-        groundT = nearGroundT;
-    }
-    // 4.2 相机恰好位于地表，且射线朝向地球内部。
-    //
-    // 近交点可能因浮点误差略小于零，
-    // 但不能因此丢失地面交点。
-    else if (
-        cameraAtSurface &&
-        viewUp < -1e-5 &&
-        farGroundT > surfaceEpsilon
-    )
-    {
-        groundT = 0.0;
-    }
+        float groundT = -1.0;
+        if (groundHit.x > epsilon && groundHit.x >= startT &&
+            groundHit.x < atmosphereHit.y)
+            groundT = groundHit.x;
+        else if (atSurface && cameraRadius > 1e-5 &&
+                 dot(dir, cameraOffset / cameraRadius) < -1e-5 &&
+                 groundHit.y > epsilon)
+            groundT = 0.0;
 
-    // ========================================================
-    // 5. 非天空物体
-    //
-    // 不执行反射。
-    // 如果地面近交点位于物体前方，
-    // 将积分终点截断在地面交点。
-    // ========================================================
-
-    if (!isSky)
-    {
-        float endT = outerB;
-
-        if (
-            groundT >= outerA &&
-            groundT < endT
-        )
-        {
+        // Geometric occlusion only: stop the ray at the solid Earth.
+        // Never replace the input color with sky or Earth shading.
+        if (groundT >= 0.0 && groundT < endT)
             endT = groundT;
-        }
-
-        if (endT <= outerA)
-            return color;
-
-        return Atomfog(
-            color,
-            atmosphereStart,
-            rayOrigin + dir * endT,
-            steps,
-            light
-        );
     }
 
-    // ========================================================
-    // 6. 天空射线没有碰到前方地面
-    //
-    // 直接积分当前视线的大气。
-    // ========================================================
-
-    if (groundT < 0.0)
-    {
-        return Atomfog(
-            color,
-            atmosphereStart,
-            atmosphereEnd,
-            steps,
-            light
-        );
-    }
-
-    // 天空射线已经命中地球。
-    // earth() 独立计算固定步数的反射大气。
-    // 主视线大气仍使用传入的 steps，不参与反射步数分配。
-    vec3 groundPoint = rayOrigin + dir * groundT;
-
-    vec3 earthColor = earth(
-        groundPoint,
-        dir
-    );
-
-    return Atomfog(
-        earthColor,
-        atmosphereStart,
-        groundPoint,
-        steps,
-        light
-    );
+    if (endT <= startT) return color;
+    return Atomfog(color,
+        rayOrigin + dir * startT,
+        rayOrigin + dir * endT,
+        steps, light);
 }
+
 
 vec3 HammersleySphereDir(uint i, uint sampleTotal)
 {
@@ -967,7 +937,7 @@ vec3 subAtomfog(vec3 color,   vec3 rayOrigin,
          float lp=length(pixel_world-rayOrigin);
            eartht2=min(lp, eartht2);
       }
-    // eartht2=min( intersectGround(rayOrigin,rm_v), eartht2);
+
       float rm_all_l=eartht2-eartht1;
       if(depth!=1.0)    
       {
@@ -1024,7 +994,7 @@ float rm_dx=rm_all_l/rm_t;
   float rm_p_mT=exp(-rm_p_sigema.a);
   vec3 rm_p_T= rm_p_rT*rm_p_mT;
   ocolor*=rm_p_T;
-  float m_s=0.5;
+  float m_s=0.7;
   float visble=sunCanReachPoint(rm_p, sun_world);
   float moon_visble=0.0;
   if (moonEnabled)
@@ -1035,7 +1005,7 @@ float rm_dx=rm_all_l/rm_t;
   // 太阳大气散射
   scatter_color+=(1-rm_p_rT)*sun_r_phase*p_suncolor*visble;
     scatter_color+=m_s*(1-rm_p_mT)*sun_m_phase*p_suncolor*visble;
-    vec3 highscatter_color=(1.0/(4*PI))*((1-rm_p_rT)+m_s*(1-rm_p_mT))*p_suncolor*visble;
+        vec3 highscatter_color = light_color*point_mulitscatter(rm_p,sun_world)*((1 - rm_p_rT) + m_s * (1 - rm_p_mT) );
     scatter_color+= highscatter_color;
 
   // 仅在 sunangle > 0.5 时累积月光散射。
@@ -1043,7 +1013,7 @@ float rm_dx=rm_all_l/rm_t;
   {
       scatter_color+=(1-rm_p_rT)*moon_r_phase*p_mooncolor*moon_visble;
       scatter_color+=m_s*(1-rm_p_mT)*moon_m_phase*p_mooncolor*moon_visble;
-      vec3 moon_highscatter_color=(1.0/(4*PI))*((1-rm_p_rT)+m_s*(1-rm_p_mT))*p_mooncolor*moon_visble;
+            vec3 moon_highscatter_color =  moon_color *point_mulitscatter(rm_p,-sun_world)*((1 - rm_p_rT) + m_s * (1 - rm_p_mT) );
       scatter_color+=moon_highscatter_color;
   }
   //

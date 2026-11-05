@@ -240,7 +240,7 @@ float cloudFBM4(vec3 p)
 
 float cloudDensity(vec3 p)
 {
-    vec3 flatPos = spherical_unmapping(p)*earth_factor;
+    vec3 flatPos = spherical_unmapping(p);
         vec2 wind=0.05*frameTimeCounter*vec2(0,-1);
      vec3 trans=vec3(wind.x,0,wind.y);
    float lp= length(p-earth_core_position);
@@ -258,15 +258,15 @@ float top_factor =
 
 float height_factor =
    normalized_height;
-   float d=cloudFBM4(0.0001*flatPos+trans);
-   float width=0.015,threshold=0.525;
+   float d=cloudFBM4(0.0000001*(flatPos+trans)*earth_factor);
+   float width=0.05,threshold=0.51;
    float density=smoothstep(threshold-width,threshold+width,d);
 return normalized_height*density;
 }
 
 float cloudsigema(vec3 p)
 {
-    const float CloudreferenceScattering = 0.001;
+    const float CloudreferenceScattering = 0.00005;
 
     return cloudDensity(p) *
            CloudreferenceScattering;
@@ -306,7 +306,7 @@ vec2 sphereIntersect(
 
 float cloudtransmisson(vec3 beginpostion,vec3 endpostion)
 {
-float t=1;
+float t=8;
 float rm_all_l = length(endpostion - beginpostion);
 if(rm_all_l<0.1)
 {
@@ -437,7 +437,7 @@ if(rm_all_l<0.1)
     return allcolor;
 }
 vec3 rm_v = normalize(endpostion-beginpostion);
-float rm_t=16; // Temporary real-time density test; raise to 64-128 after comparison.
+float rm_t=64; // Temporary real-time density test; raise to 64-128 after comparison.
 float rm_dx=rm_all_l/rm_t;
 float cloud_phase = dot(rm_v, sun_world); // cosTheta
 float cloud_mie_g = 0.375;
@@ -468,7 +468,7 @@ float T = exp(-opticalDepth);
 float optical=1-T;
 allcolor*=T;
 allcolor+=(p_suncolor*cloud_mie_phase)*optical;
-allcolor+=p_allcolor*cloud_mie_phase*optical;
+allcolor+=p_suncolor*cloud_mie_phase*optical;
 }
 return allcolor;
 }
