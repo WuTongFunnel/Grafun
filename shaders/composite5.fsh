@@ -19,7 +19,6 @@ layout(location = 0) out vec4 finalcolor;
 vec4 grafunSSR2DDDA(vec3 worldPos, vec3 normal, vec3 reflectionDir)
 {
     const float BIG = 1e30;
-    const float MIN_RAY_Z_EPS = 0.001;
 
     // The old SSR_STEP_SIZE now determines WORLD RAY REACH, not pixel stride.
     float maxDistance = max(SSR_STEP_SIZE, 0.001) * float(SSR_MAX_STEPS);
@@ -132,16 +131,39 @@ vec4 grafunSSR2DDDA(vec3 worldPos, vec3 normal, vec3 reflectionDir)
             break;
 
         vec2 sampleUV = (vec2(cell) + 0.5) / resolution;
-        float tMid = 0.5 * (tEnter + tExit);
-        float kMid = mix(k0, k1, tMid);
-        vec3 rayVS = mix(Q0, Q1, tMid) / max(kMid, 1e-20);
-
-        // The ray itself must be inside the relevant depth projection.
-        bool sampleIsDistant = false;
+        // Empty pixels cannot contribute a geometry hit. Reject before the
+        // inverse perspective interpolation and the projection matrix multiply.
+        float sceneDepth = 1.0;
 #ifdef DISTANT_HORIZONS
-        sampleIsDistant = gfDhFrontAt(sampleUV);
+        bool sampleIsDistant = gfDhFrontAt(sampleUV);
+        float dhDepth = 1.0;
         if (sampleIsDistant)
         {
+            dhDepth = textureLod(dhDepthTex0, sampleUV, 0.0).r;
+            if (dhDepth >= 0.999999)
+                continue;
+        }
+        else
+#endif
+        {
+            sceneDepth = texelFetch(depthtex0, cell, 0).r;
+            if (sceneDepth >= 0.999999)
+                continue; // same no-geometry condition as V4
+        }
+
+        float tMid = 0.5 * (tEnter + tExit);
+
+        // Native clip-space Z/W is affine along the already-projected
+        // screen segment: ndcZ(t)=mix(clip0.z/clip0.w,clip1.z/clip1.w,t).
+        // Both endpoint clip.w values were checked positive at the top,
+        // so recomputing a perspective-correct rayVS and then multiplying
+        // by gbufferProjection is unnecessary for native candidates.
+#ifdef DISTANT_HORIZONS
+        if (sampleIsDistant)
+        {
+            // DH uses a different projection; keep its original test.
+            float kMid = mix(k0, k1, tMid);
+            vec3 rayVS = mix(Q0, Q1, tMid) / max(kMid, 1e-20);
             vec4 dhClip = dhProjection * vec4(rayVS, 1.0);
             if (dhClip.w <= 0.0 || abs(dhClip.z) > dhClip.w)
                 continue;
@@ -149,8 +171,8 @@ vec4 grafunSSR2DDDA(vec3 worldPos, vec3 normal, vec3 reflectionDir)
         else
 #endif
         {
-            vec4 nativeClip = gbufferProjection * vec4(rayVS, 1.0);
-            if (nativeClip.w <= 0.0 || abs(nativeClip.z) > nativeClip.w)
+            float nativeNdcZ = mix(clip0.z * k0, clip1.z * k1, tMid);
+            if (abs(nativeNdcZ) > 1.0)
                 continue;
         }
 
@@ -158,18 +180,11 @@ vec4 grafunSSR2DDDA(vec3 worldPos, vec3 normal, vec3 reflectionDir)
 #ifdef DISTANT_HORIZONS
         if (sampleIsDistant)
         {
-            float dhDepth = textureLod(dhDepthTex0, sampleUV, 0.0).r;
-            if (dhDepth >= 0.999999)
-                continue;
             sceneViewZ = gfDhViewPosition(sampleUV, dhDepth).z;
         }
         else
 #endif
         {
-            float sceneDepth = texelFetch(depthtex0, cell, 0).r;
-            if (sceneDepth >= 0.999999)
-                continue; // no geometry: do not reflect background stars
-
             vec4 sceneH = gbufferProjectionInverse * vec4(
                 sampleUV * 2.0 - 1.0, sceneDepth * 2.0 - 1.0, 1.0
             );
@@ -209,9 +224,10 @@ void main()
     // Background pixels must not leak into the SSR blur.
     finalcolor = vec4(0.0);
 
-    float alpha_g = texture(colortex8, texcoord).g;
-    float alpha_r = texture(colortex8, texcoord).r;
-    bool isWater = texture(colortex8, texcoord).b > 0.5;
+    vec4 materialFlags = texture(colortex8, texcoord);
+    float alpha_g = materialFlags.g;
+    float alpha_r = materialFlags.r;
+    bool isWater = materialFlags.b > 0.5;
 
 #ifdef DISTANT_HORIZONS
     if (gfDhFrontSky(texcoord)) return;
@@ -265,35 +281,43 @@ void main()
 
     if (isWater && ssr.a < 0.5)
     {
-        // Screen-space miss: reflect the REAL sky, not black. Keep the
-        // 8-step atmospheric reflection separate from direct-view atmosphere.
-        vec3 skyBase = skybackground(
-            reflectDir, vec2(0.0), 1.0, 0.0
-        ).rgb;
-        vec3 reflectedOrigin = worldPos + worldNormal * 0.02;
-        vec2 atmosphereHit = intersectEarth(reflectDir, reflectedOrigin);
-        if (atmosphereHit.y > 0.0)
+        if (gfShouldBlockLowerHemisphereSky(reflectDir))
         {
-            vec3 atmosphereStart = reflectedOrigin
-                + reflectDir * max(atmosphereHit.x, 0.0);
-            vec3 atmosphereEnd = reflectedOrigin
-                + reflectDir * atmosphereHit.y;
-            reflectColor = Atomfog(
-                skyBase, atmosphereStart, atmosphereEnd, 8, 1.0
-            );
+            // The reflected ray points into the forbidden lower sky.
+            reflectColor = vec3(0.0);
         }
         else
         {
-            reflectColor = skyBase;
-        }
-        // Compact specular sun/moon glints when SSR cannot hit the disc.
-        // No diffuse term. Retain the original 8-step reflected atmosphere.
-        float solarGlint = pow(max(dot(reflectDir, normalize(sun_world)), 0.0), 768.0);
-        reflectColor += 0.015 * light_color * solarGlint;
-        if (sunAngle > 0.5)
-        {
-            float lunarGlint = pow(max(dot(reflectDir, normalize(-sun_world)), 0.0), 1024.0);
-            reflectColor += 0.03 * moon_color * lunarGlint;
+            // Screen-space miss: reflect the REAL sky, not black. Keep the
+            // 8-step atmospheric reflection separate from direct-view atmosphere.
+            vec3 skyBase = skybackground(
+                reflectDir, vec2(0.0), 1.0, 0.0
+            ).rgb;
+            vec3 reflectedOrigin = worldPos + worldNormal * 0.02;
+            vec2 atmosphereHit = intersectEarth(reflectDir, reflectedOrigin);
+            if (atmosphereHit.y > 0.0)
+            {
+                vec3 atmosphereStart = reflectedOrigin
+                    + reflectDir * max(atmosphereHit.x, 0.0);
+                vec3 atmosphereEnd = reflectedOrigin
+                    + reflectDir * atmosphereHit.y;
+                reflectColor = Atomfog(
+                    skyBase, atmosphereStart, atmosphereEnd, 8
+                );
+            }
+            else
+            {
+                reflectColor = skyBase;
+            }
+            // Compact specular sun/moon glints when SSR cannot hit the disc.
+            // No diffuse term. Retain the original 8-step reflected atmosphere.
+            float solarGlint = pow(max(dot(reflectDir, normalize(sun_world)), 0.0), 768.0);
+            reflectColor += 0.015 * light_color * solarGlint;
+            if (sunAngle > 0.5)
+            {
+                float lunarGlint = pow(max(dot(reflectDir, normalize(-sun_world)), 0.0), 1024.0);
+                reflectColor += 0.03 * moon_color * lunarGlint;
+            }
         }
     }
 

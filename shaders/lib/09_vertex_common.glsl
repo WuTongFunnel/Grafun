@@ -14,12 +14,12 @@ uniform vec3 sun_origin_base_color;
 // Planet curvature is kept for the moon and the independent volumetric clouds.
 #define earth_factor 1.0
 const float ambientOcclusionLevel = 1.0;
-const float earth_r = 6371000.0;
+const float earth_r = EARTH_RADIUS_KM * 1000.0;
 const float atom_height = 100000.0;
 const float MC_r = earth_r / earth_factor;
 const float MC_atom_height = atom_height / earth_factor;
 const float MC_ar = MC_r + MC_atom_height;
-const float MC_sealevel = 63.0;
+const float MC_sealevel =8;
 const float sunk = 1000.0;
 #if BLOCKLIGHT_STRENGTH == 100
 const vec3 blocklightColor = sunk * (3.0 / 2600.0) * vec3(BLOCKLIGHT_COLOR_R, BLOCKLIGHT_COLOR_G, BLOCKLIGHT_COLOR_B);
@@ -64,6 +64,7 @@ GRAFUN_COMMON_IO mat3 gfStarRotation;
 #if defined(GRAFUN_COMPOSITE8) && defined(Sun_Bloom)
     GRAFUN_COMMON_IO vec3 center_world;
     GRAFUN_COMMON_IO vec3 gfCameraShadow;
+    GRAFUN_COMMON_IO float gfSunVisibilityAtCamera;
     GRAFUN_COMMON_IO vec2 gfSunUv;
     GRAFUN_COMMON_IO vec2 gfMoonUv;
 #endif
@@ -95,6 +96,7 @@ vec3 rotateVectorAroundAxis(vec3 v, vec3 axis, float angle);
 #if defined(GRAFUN_COMPOSITE8) && defined(Sun_Bloom)
     vec3 getSoftShadow(vec4 shadowClipPos, float bias);
     vec3 screenxyz_to_worldxyz(vec4 p);
+    float sunCanReachPoint(vec3 P, vec3 sunDir);
 #endif
 
 #if defined(GRAFUN_COMPOSITE9) && defined(Vignette) && Vignette_Type == 1
@@ -126,7 +128,7 @@ void calculateVertexCommon()
 #else
     sun_see_color = light_color / (2.0 * PI * (1.0 - cos(radians(0.25 * float(SUN_SIZE) / 100.0))));
 #endif
-    moonk =0* (1.0 / 40000.0) * (1.0 + cos(moon_phase));
+    moonk = 0*(1.0 / 600.0) * (1.0 + cos(moon_phase));
     moon_color = 0.5 * sunk * moonk * sun_origin_base_color;
 #if MOONLIGHT_BRIGHTNESS != 100
     moon_color *= float(MOONLIGHT_BRIGHTNESS) / 100.0;
@@ -173,6 +175,11 @@ void calculateVertexCommon()
     #if defined(GRAFUN_COMPOSITE8) && defined(Sun_Bloom)
         // Fixed-coordinate texture reads use the same pass's current textures.
         // The old fragment UV was constant, so these reads use base LOD as well.
+        // The visibility at the camera is frame-uniform; the original
+        // composite8 fragment shader recomputed this complex cap intersection
+        // for every screen pixel when the sun was behind the horizon.
+        gfSunVisibilityAtCamera = sunAngle > 0.5
+            ? sunCanReachPoint(vec3(0.0), sun_world) : 1.0;
         float center_depth = textureLod(depthtex0, vec2(0.5), 0.0).r;
         center_world = screenxyz_to_worldxyz(vec4(vec2(0.5), center_depth, 1.0));
         gfCameraShadow = vec3(1.0);

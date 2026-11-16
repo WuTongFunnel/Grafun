@@ -3,130 +3,6 @@ const float EPS = 1e-6;
 
 
 
-//2Dperlin
-vec4 permute(vec4 x)
-{
-    return mod(((x * 34.0) + 1.0) * x, 289.0);
-}
-
-vec4 taylorInvSqrt(vec4 r)
-{
-    return 1.79284291400159 - 0.85373472095314 * r;
-}
-
-float fade(float t)
-{
-    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-}
-
-// ------------------------------------------------------------
-// 2D Perlin Noise
-// 输入：连续二维坐标
-// 输出：近似 [0, 1]
-// ------------------------------------------------------------
-
-float perlin2D_01(vec2 P)
-{
-    vec2 Pi = floor(P);
-    vec2 Pf = fract(P);
-
-    Pi = mod(Pi, 16.0);
-
-    // 四个格点的整数坐标
-    vec4 ix = Pi.x + vec4(0.0, 1.0, 0.0, 1.0);
-    vec4 iy = Pi.y + vec4(0.0, 0.0, 1.0, 1.0);
-
-    // 格点哈希
-    vec4 i = permute(permute(ix) + iy);
-
-    // 生成梯度分量
-    vec4 gx = 2.0 * fract(i / 41.0) - 1.0;
-    vec4 gy = 2.0 * fract(i / 41.0 + 0.5) - 1.0;
-
-    // 归一化梯度
-    vec4 len2 = gx * gx + gy * gy;
-    vec4 invlen = taylorInvSqrt(len2);
-
-    gx *= invlen;
-    gy *= invlen;
-
-    // 四个格点对应的相对坐标
-    vec4 dx = vec4(
-        Pf.x,
-        Pf.x - 1.0,
-        Pf.x,
-        Pf.x - 1.0
-    );
-
-    vec4 dy = vec4(
-        Pf.y,
-        Pf.y,
-        Pf.y - 1.0,
-        Pf.y - 1.0
-    );
-
-    // 梯度点积
-    vec4 dots = gx * dx + gy * dy;
-
-    // 五次平滑插值
-    vec2 f = vec2(
-        fade(Pf.x),
-        fade(Pf.y)
-    );
-
-    float x1 = mix(dots.x, dots.y, f.x);
-    float x2 = mix(dots.z, dots.w, f.x);
-
-    float value = mix(x1, x2, f.y);
-
-    return clamp(value * 0.5 + 0.5, 0.0, 1.0);
-}
-
-
-
-float perlinFBM2D(vec2 uv)
-{
-    float n = 0.0;
-    float amplitude = 0.5;
-    float totalAmplitude = 0.0;
-
-    // 四个 octave
-    for (int i = 0; i < 4; i++)
-    {
-        vec2 sampleuv=mod(uv,16)/16.0;
-        n += amplitude * texture2DLod(perlin,sampleuv,0).r;
-        totalAmplitude += amplitude;
-
-        uv = uv * 2.0 + vec2(17.13, 9.21);
-        amplitude *= 0.5;
-    }
-
-    return n / totalAmplitude;
-}
-
-
-// 输入：高度（米）
-// 输出：散射系数（m^-1）
-float localsigema(vec3 p)
-{
-    const float referenceScattering = 0.01;
-       const float referenceHeight = 0;
-    const float heightFalloff =0.05;
-float height =  (length(p - earth_core_position) - MC_r);
-    float h = abs(height - referenceHeight);
-    vec3  localnormal=normalize(p-earth_core_position);
-    float  local_sun_thetap2=1-dot(localnormal,sun_world)*dot(localnormal,sun_world);
-   float dh= local_sun_thetap2* local_sun_thetap2*exp(
-        -heightFalloff * h
-    );
-   vec3 newp = spherical_unmapping(p);
-    vec2 worldp=newp.xz+cameraPosition.xz;
-    vec2 wind=0.125*frameTimeCounter*vec2(-1,0);
-float dxz=perlinFBM2D(0.005*worldp+wind);//0.05,0.0375
-dxz= pow(dxz,2);//2,3.5
-
-    return referenceScattering * dh*dxz;
-}
 // 单位球单个球冠立体角，halfAngle 为半张角（弧度）
 float capSolidAngle(float halfAngle) {
     return 2.0 * PI * (1.0 - cos(halfAngle));
@@ -231,7 +107,7 @@ vec4 getOpticalDepth(vec3 P, vec3 dir)
     vec3 OP = P - earth_core_position;
     float r = length(OP);
     vec3 samplePoint = P;
-
+    if(r <MC_r)return vec4(0);
     if(r > MC_ar)
     {
         // 射线 P + t*dir 和大气球相交，t>0 是前进方向
@@ -353,48 +229,6 @@ vec4 grafunSegmentTau(vec3 segmentMid, vec3 rayDir, float ds)
     return vec4(vec3(0.005802, 0.013558, 0.0331) * (rCol * km),
                 0.003996 * (mCol * km));
 }
-vec3 grafunSegmentOzoneTau(
-    vec3 segmentMid,
-    vec3 rayDir,
-    float ds
-)
-{
-    const float k = 0.2886751345948129; // 1/(2*sqrt(3))
-
-    // Two-point Gauss-Legendre nodes
-    vec3 p0 = segmentMid - rayDir * (ds * k);
-    vec3 p1 = segmentMid + rayDir * (ds * k);
-
-    // Altitude: world units -> km
-    float h0 = (length(p0 - earth_core_position) - MC_r)
-             * earth_factor * 0.001;
-
-    float h1 = (length(p1 - earth_core_position) - MC_r)
-             * earth_factor * 0.001;
-
-    // Triangular ozone density profile: 10~40 km, peak at 25 km
-    float o0 = clamp(
-        1.0 - abs(h0 - 25.0) / 15.0,
-        0.0, 1.0
-    );
-
-    float o1 = clamp(
-        1.0 - abs(h1 - 25.0) / 15.0,
-        0.0, 1.0
-    );
-
-    // Hillaire ozone absorption coefficients [R,G,B], km^-1
-    const vec3 betaOzone = vec3(
-        0.000650,
-        0.001881,
-        0.000085
-    );
-
-    // meters -> km, including Gauss weight 1/2
-    float km = ds * earth_factor * 0.0005;
-
-    return betaOzone * ((o0 + o1) * km);
-}
   vec4 sun_pixel = gbufferProjection * vec4(sun_view, 1.0);
        vec4 nsun_pixel = sun_pixel/sun_pixel.w;
         vec2 SunUv = nsun_pixel.xy * 0.5 + 0.5;
@@ -415,7 +249,7 @@ vec3 Atomfog(
     vec3 color,
     vec3 startPos,
     vec3 endPos,
-    int rm_t,float light
+    int rm_t
 )
 {
     float rm_all_l = length(endPos - startPos);
@@ -472,17 +306,15 @@ vec3 Atomfog(
     for (int i = 1; i < rm_t + 1; i++)
     {
   
-         vec3 shadow=vec3(1,1,1);
-    
-        float rm_r = length(rm_p - earth_core_position);
         vec3 checkTp = rm_p - 0.5 * rm_v * rm_dx;
 
         frontsigema = getOpticalDepth(checkTp, rm_v);
         Ozonefrontsigema = getOzoneOpticalDepth(checkTp, rm_v);
         vec4 rm_p_sigema =frontsigema - backsigema;
          vec3 Ozonerm_p_sigema=Ozonefrontsigema-Ozonebacksigema;
- if(any(lessThan(rm_p_sigema, vec4(0.4)))){rm_p_sigema = grafunSegmentTau(rm_p, rm_v, rm_dx);}
-//if(any(lessThan(Ozonerm_p_sigema, vec3(0.4)))){Ozonerm_p_sigema=grafunSegmentOzoneTau(rm_p, rm_v, rm_dx);}
+ if(any(lessThan(rm_p_sigema, vec4(0.4)))){
+    rm_p_sigema = grafunSegmentTau(rm_p, rm_v, rm_dx);
+ }
         vec3 ocolor = allcolor;
         vec3 scatter_color = vec3(0);
 
@@ -511,9 +343,9 @@ vec3 Atomfog(
 
         // 太阳大气散射
         scatter_color +=
-            (1 - rm_p_rT) * sun_r_phase * p_suncolor * visble*shadow;
+            (1 - rm_p_rT) * sun_r_phase * p_suncolor * visble;
 
-        scatter_color += m_s * (1 - rm_p_mT) * sun_m_phase * p_suncolor * visble*shadow;
+        scatter_color += m_s * (1 - rm_p_mT) * sun_m_phase * p_suncolor * visble;
 #ifndef Highscatter
         vec3 highscatter_color = light_color*point_mulitscatter(rm_p,sun_world)*((1 - rm_p_rT) + m_s * (1 - rm_p_mT) );
         scatter_color += highscatter_color;
@@ -523,57 +355,16 @@ vec3 Atomfog(
         if (moonEnabled)
         {
             scatter_color +=
-                (1 - rm_p_rT) * moon_r_phase * p_mooncolor * moon_visble*shadow;
+                (1 - rm_p_rT) * moon_r_phase * p_mooncolor * moon_visble;
 
             scatter_color +=
-                m_s * (1 - rm_p_mT) * moon_m_phase * p_mooncolor * moon_visble*shadow;
+                m_s * (1 - rm_p_mT) * moon_m_phase * p_mooncolor * moon_visble;
 #ifndef Highscatter
             vec3 moon_highscatter_color =  moon_color *point_mulitscatter(rm_p,-sun_world)*((1 - rm_p_rT) + m_s * (1 - rm_p_mT) );
             scatter_color += moon_highscatter_color;
             #endif
         }
 
-        // 局部雾气
-    if (rm_r < MC_r+80 )
-        {
-
-     {
-     vec3 rm_shadowViewPos = (shadowModelView * vec4(rm_p, 1.0)).xyz;
-	vec4 rm_shadowClipPos = shadowProjection * vec4(rm_shadowViewPos, 1.0);
-     rm_shadowClipPos.z -= 0.000001;
-      // apply bias
-      rm_shadowClipPos.xyz = distortShadowClipPos(rm_shadowClipPos.xyz);
-      vec3 rm_shadowNDCPos=rm_shadowClipPos.xyz/rm_shadowClipPos.w;
-            vec3 rm_shadowScreenPos = rm_shadowNDCPos * 0.5 + 0.5;
-bool inShadowFrustum = all(lessThan(abs(rm_shadowNDCPos.xyz), vec3(1.0)));
-if(inShadowFrustum){
-    vec3 rm_shadowScreenPos = rm_shadowNDCPos * 0.5 + 0.5;
-    shadow = getShadow(rm_shadowScreenPos); 
-}
-    }
-            float sigmaS = localsigema(rm_p);
-            float dxmeter = rm_dx;
-            float opticalDepth = sigmaS * dxmeter;
-            float T = exp(-opticalDepth);
-            float optical = 1 - T;
-
-           ocolor *= T;
-
-           scatter_color += p_suncolor * sun_m_phase * optical*visble*shadow;
-            if (moonEnabled)
-            {
-                scatter_color += p_mooncolor * moon_m_phase * optical*moon_visble*shadow;
-            }
-            
-            vec3 g_color = p_suncolor * opticalDepth;
-           scatter_color += g_color * (1.0 / (4 * PI))*visble*light;
-
-            if (moonEnabled)
-            {
-                vec3 moon_g_color = p_mooncolor * opticalDepth;
-                scatter_color += moon_g_color * (1.0 / (4 * PI))*moon_visble*light;
-            }
-        }
 
         rm_p -= rm_v * rm_dx;
         backsigema = frontsigema;
@@ -589,32 +380,61 @@ float pingpong(float t, float a)
     return a - abs(m - a);
 }
 
-// Earthpicture uses a standard equirectangular full-globe atlas.
-// The quaternion supplies a continuous globe pose, also after travelling
-// across either geographic pole. Do NOT fold latitude or reverse movement.
+// Earthpicture is a standard full-globe equirectangular atlas.
+// gfEarthFramePose() is the continuously transported local-to-globe frame.
+// The quaternion remains continuous through both poles; latitude is never
+// folded and the local east axis is never independently mirrored.
 //
-// At the poles longitude is undefined (atan(0,0)); choose a finite value.
-// Also keep V half a texel away from the poles: if Earthpicture uses GL_REPEAT
-// vertically, sampling exactly V=0/1 would interpolate the opposite pole.
+// A lat-long atlas has an unavoidable coordinate singularity at each pole.
+// There longitude is undefined, so use the transported local east axis as
+// the deterministic limiting meridian instead of evaluating atan(0, 0).
+// V maps the COMPLETE geographic latitude range [-PI/2,+PI/2] to [0,1].
 vec2 earthSphericalUV(vec3 localNormal)
 {
     vec4 q = gfEarthFramePose();
-    vec3 globeNormal = normalize(gfEarthRotateVector(q, normalize(localNormal)));
+
+    vec3 localN = normalize(localNormal);
+    vec3 globeNormal = normalize(gfEarthRotateVector(q, localN));
 
     float horizontalRadius = length(globeNormal.xy);
-    float longitude = (horizontalRadius > 1e-7)
-        ? atan(globeNormal.x, globeNormal.y)
+
+    // Stable pole meridian from the same transported frame.
+    // At a pole the local tangent axes lie in the globe's equatorial plane.
+    vec3 poleReference = gfEarthRotateVector(q, vec3(1.0, 0.0, 0.0));
+    vec2 poleReferenceXY = poleReference.xy;
+
+    // A defensive fallback for orientations where transported local +X
+    // happens to align with the geographic pole axis.
+    if (dot(poleReferenceXY, poleReferenceXY) < 1e-8)
+    {
+        poleReference = gfEarthRotateVector(q, vec3(0.0, 0.0, 1.0));
+        poleReferenceXY = poleReference.xy;
+    }
+
+    float poleLongitude = (dot(poleReferenceXY, poleReferenceXY) > 1e-12)
+        ? atan(poleReferenceXY.x, poleReferenceXY.y)
         : 0.0;
+
+    float longitude = (horizontalRadius > 1e-6)
+        ? atan(globeNormal.x, globeNormal.y)
+        : poleLongitude;
+
     float latitude = atan(globeNormal.z, horizontalRadius);
 
-    // Full latitude range [-PI/2,+PI/2] must span the entire V range [0,1].
-    // Keep existing east/west direction and 0.77 atlas offset unchanged.
+    // Preserve the existing horizontal atlas rotation and east/west sense.
     float u = fract(0.8 + longitude / (2.0 * PI));
-    float v = 0.395 + latitude / PI;
 
+    // Critical fix: 0.5 is the equator. 0.395 shifted the entire atlas
+    // south by 18.9 degrees and made the 71.1-degree row become the north pole.
+    float v = 0.5 + latitude / PI;
+
+    // Never sample exactly V=0 or V=1: with GL_REPEAT this would blend the
+    // north and south edges. Half-texel inset selects the actual pole row.
     float texHeight = float(max(textureSize(Earthpicture, 0).y, 1));
     float halfTexelV = 0.5 / texHeight;
-    return vec2(u, clamp(v, halfTexelV, 1.0 - halfTexelV));
+    v = clamp(v, halfTexelV, 1.0 - halfTexelV);
+
+    return vec2(u, v);
 }
 
 
@@ -622,6 +442,174 @@ vec2 earthSphericalUV(vec3 localNormal)
 // Forward declarations: definitions are intentionally retained below.
 vec3 HammersleyCosHemisphereDir(uint i, uint sampleTotal, vec3 N);
 vec3 subAtomfog(vec3 color, vec3 rayOrigin, vec3 pixel_world, float depth);
+
+vec3 airglow(vec3 position, vec3 direction)
+{
+    const float C557 =7.69e-15*sun_see_color.r;
+    const float C630 = 1.69e-15*sun_see_color.r;
+
+    // CIE 1931 2-degree color matching functions
+    const vec3 CMF557 = vec3(0.5566, 0.9973, 0.0047);
+    const vec3 CMF630 = vec3(0.6424, 0.2650, 0.0000);
+
+    // 4-point Gauss-Legendre quadrature
+    const float GX[4] = float[4](
+        -0.8611363116,
+        -0.3399810436,
+         0.3399810436,
+         0.8611363116
+    );
+
+    const float GW[4] = float[4](
+        0.3478548451,
+        0.6521451549,
+        0.6521451549,
+        0.3478548451
+    );
+
+    const float PROFILE_NORM = 2.392576;
+
+    float worldToKm = earth_factor * 0.001;
+
+    if (dot(direction, direction) < 1e-12)
+        return vec3(0.0);
+
+    vec3 dir = normalize(direction);
+    vec3 oc = position - earth_core_position;
+
+    float r0 = length(oc);
+
+    if (r0 < MC_r - 1e-3)
+        return vec3(0.0);
+
+    float b = dot(oc, dir);
+    float oc2 = dot(oc, oc);
+
+    vec3 XYZ = vec3(0.0);
+
+    for (int layer = 0; layer < 2; ++layer)
+    {
+        bool green = layer == 0;
+
+        float minH = green ? 80.0 : 145.0;
+        float maxH = green ? 112.0 : 355.0;
+
+        float peak = green ? 96.0 : 250.0;
+        float sigma = green ? 8.0 : 52.5;
+
+        float C = green ? C557 : C630;
+
+        vec3 CMF = green ? CMF557 : CMF630;
+
+        float innerR = MC_r + minH / worldToKm;
+        float outerR = MC_r + maxH / worldToKm;
+
+        // Outer shell intersection
+        float outerD =
+            b * b - (oc2 - outerR * outerR);
+
+        if (outerD <= 0.0)
+            continue;
+
+        float outerS = sqrt(outerD);
+
+        float t0 = max(-b - outerS, 0.0);
+        float t1 = -b + outerS;
+
+        // Earth occlusion
+        float groundD =
+            b * b - (oc2 - MC_r * MC_r);
+
+        if (groundD >= 0.0)
+        {
+            float groundNear =
+                -b - sqrt(groundD);
+
+            if (groundNear > 0.0)
+                t1 = min(t1, groundNear);
+        }
+
+        if (t1 <= t0)
+            continue;
+
+        // Inner shell intersection
+        float innerD =
+            b * b - (oc2 - innerR * innerR);
+
+        float innerNear = -1.0;
+        float innerFar = -1.0;
+
+        if (innerD >= 0.0)
+        {
+            float innerS = sqrt(innerD);
+
+            innerNear = -b - innerS;
+            innerFar  = -b + innerS;
+        }
+
+        // There can be two visible shell segments.
+        for (int branch = 0; branch < 2; ++branch)
+        {
+            float segStart = t0;
+            float segEnd = t1;
+
+            if (innerD >= 0.0)
+            {
+                if (branch == 0)
+                    segEnd = min(t1, innerNear);
+                else
+                    segStart = max(t0, innerFar);
+            }
+            else if (branch == 1)
+            {
+                continue;
+            }
+
+            if (segEnd <= segStart)
+                continue;
+
+            float mid = 0.5 * (segStart + segEnd);
+            float halfLen = 0.5 * (segEnd - segStart);
+
+            float pathIntegral = 0.0;
+
+            for (int j = 0; j < 4; ++j)
+            {
+                float t = mid + halfLen * GX[j];
+
+                vec3 P = position + dir * t;
+
+                float h =
+                    (length(P - earth_core_position) - MC_r)
+                    * worldToKm;
+
+                float x = (h - peak) / sigma;
+
+                float density =
+                    exp(-0.5 * x * x) /
+                    (sigma * PROFILE_NORM);
+
+                float dsKm =
+                    halfLen * GX[j] * 0.0 +
+                    halfLen * GW[j] * worldToKm;
+
+                pathIntegral += density * dsKm;
+            }
+
+            XYZ += C * pathIntegral * CMF;
+        }
+    }
+
+    // CIE XYZ -> Linear sRGB
+    vec3 RGB = vec3(
+         3.2406 * XYZ.x - 1.5372 * XYZ.y - 0.4986 * XYZ.z,
+        -0.9689 * XYZ.x + 1.8758 * XYZ.y + 0.0415 * XYZ.z,
+         0.0557 * XYZ.x - 0.2040 * XYZ.y + 1.0570 * XYZ.z
+    );
+
+    return onlyafterT(position,direction)*max(RGB, vec3(0.0));
+}
+
 
 vec3 earth(
     vec3 groundPoint,
@@ -635,7 +623,7 @@ vec3 earth(
     // 直接对球面法线做球面经纬度映射，不再将球面展开为平面。
     // Earthpicture 应为标准的等距圆柱（经纬度）全球纹理。
     vec2 earthuv = earthSphericalUV(normal);
-    vec3 earthcolor = pow(texture(Earthpicture, earthuv).rgb, vec3(2.2));
+    vec3 earthcolor = 0.88*pow(texture(Earthpicture, earthuv).rgb, vec3(2.2));
     if (E(earthcolor) > 0.006)
     {
         // Preserve the Earth diffuse skylight used in the earlier Grafun version.
@@ -655,7 +643,21 @@ vec3 earth(
             skylightColor += subAtomfog(skybackground(sampleDir, vec2(0.0, 9.0), 1.0, 1.0).rgb, groundPoint, sampleDir, 1.0);
         }
         skylightColor *= PI / float(SKY_SAMPLES);*/
-        return earthcolor * (moonlight+ sunlight+skylightColor ) / PI;
+              vec3 starlightColor = vec3(0.0);
+        {
+        
+                const uint SKY_SAMPLES = 16u;
+           for (uint i = 0u; i < SKY_SAMPLES; ++i)
+        {
+            vec3 sampleDir = HammersleyCosHemisphereDir(i, SKY_SAMPLES, normal);
+            starlightColor += skybackground(sampleDir, vec2(0.0, 9.0), 1.0, 1.0).rgb;
+#ifdef AIRGLOW
+            starlightColor += airglow(groundPoint, sampleDir);
+#endif
+        }
+        skylightColor *= PI / float(SKY_SAMPLES);
+    }
+        return earthcolor * (moonlight+ sunlight+skylightColor+ starlightColor) / PI;
     }
     // 反射大气固定步数，与主视线 steps 完全解耦。
     const int reflectionSteps = 16;
@@ -752,8 +754,7 @@ vec3 earth(
             reflectedSkyBase,
             reflectedStart,
             reflectedEnd,
-            reflectionSteps,
-            0.1
+            reflectionSteps
         );
 
         // 返回反射方向计算得到的天空颜色。
@@ -812,8 +813,7 @@ vec3 atmosphere(
     vec3 pixel_world,
     vec3 color,
     float depth,
-    int steps,
-    float light
+    int steps
 )
 {
     // This function NEVER shades the Earth and NEVER creates background stars.
@@ -826,6 +826,13 @@ vec3 atmosphere(
 
     vec3 dir = rayVector / rayLength;
     bool isSky = depth >= 0.999999;
+
+    // A below-sea-level camera cannot see atmospheric sky through the
+    // lower hemisphere. Return the caller's background without integrating
+    // the atmosphere along a ray that points into the solid planet.
+    if (isSky && gfShouldBlockLowerHemisphereSky(dir))
+        return color;
+
     vec2 atmosphereHit = intersectEarth(dir, rayOrigin);
     if (atmosphereHit.y <= 0.0) return color;
 
@@ -869,27 +876,11 @@ vec3 atmosphere(
     return Atomfog(color,
         rayOrigin + dir * startT,
         rayOrigin + dir * endT,
-        steps, light);
+        steps);
 }
 
 
-vec3 HammersleySphereDir(uint i, uint sampleTotal)
-{
-    uint bits = i;
-    bits = (bits << 16u) | (bits >> 16u);
-    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
-    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
-    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
-    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
-    float rInv = float(bits) * 2.3283064365386963e-10;
-    vec2 xi = vec2(float(i)/float(sampleTotal), rInv);
-    float u = xi.x;
-    float v = xi.y;
-    float phi = 2.0 * PI * u;
-    float z = 1.0 - 2.0 * v;
-    float r = sqrt(max(0.0, 1.0 - z*z));
-    return vec3(r * cos(phi), r * sin(phi), z);
-}
+
 // 输入：i样本序号，sampleTotal总样本数，N世界空间单位法线
 // 返回：世界空间入射方向wi，pdf = dot(N,wi)/PI
 vec3 HammersleyCosHemisphereDir(uint i, uint sampleTotal, vec3 N)
@@ -1024,3 +1015,4 @@ allcolor=ocolor+scatter_color;
 }
 return allcolor;
 }
+

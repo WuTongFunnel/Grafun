@@ -39,9 +39,6 @@ if(depth==1.0)
 
 //light
 
-	vec2 light=texture(colortex4, texcoord).rg;
-	vec3 encodedNormal = texture(colortex5, texcoord).rgb;
-    vec3 normal = normalize((encodedNormal - 0.5) * 2.0);
 	 vec2 dtexcoord=texcoord;
 	 #ifdef TAA
 	 dtexcoord-=0.5*djlitter;
@@ -75,8 +72,11 @@ if (texture(colortex8, texcoord).b > 0.5)
     color = vec4(0.0);
     return;
 }
-vec3 pixel_world=temp_pixel_world_pos+cameraPosition;
-		vec3 p = pixel_world;
+// Non-water paths alone need material lighting and surface normals.
+	vec2 light=texture(colortex4, texcoord).rg;
+	vec4 encodedNormalData = texture(colortex5, texcoord);
+	vec3 encodedNormal = encodedNormalData.rgb;
+    vec3 normal = normalize((encodedNormal - 0.5) * 2.0);
 // Direct solar and lunar lighting, without sky irradiance.
 #ifdef Realtime_Sunlight
 vec3 sunlightColor = light_color * onlyafterT(temp_pixel_world_pos, sun_world);
@@ -105,14 +105,14 @@ reallight=smoothstep(0,1,reallight)*reallight;
 	if(sun_theta_c<0)sun_sign=0;
 vec3 sunlight = sun_sign*sunlightColor * clamp(dot( sun_world, normal), 0.0, 1.0)*shadow;
 vec3 moonlight =  moonlightcolor* clamp(dot( -sun_world, normal), 0.0, 1.0)*shadow;
-if(texture(colortex5, texcoord).a>1)
+if(encodedNormalData.a>1)
 {
 	sunlight = sun_sign*sunlightColor *shadow;
 moonlight =  moonlightcolor*shadow;
 }
 vec3 E_light=gfHandLight;
 vec3 q=vec3(0,0,0);
-vec3 right_hand_light=(E_light/(length(temp_pixel_world_pos-q)*length(temp_pixel_world_pos-q)))*clamp(dot(-normalize(temp_pixel_world_pos-q),normal),0,1);
+vec3 right_hand_light=(E_light/dot(temp_pixel_world_pos-q, temp_pixel_world_pos-q))*clamp(dot(-normalize(temp_pixel_world_pos-q),normal),0,1);
 vec3 skylightColor = vec3(0.0);
 #ifdef Realtime_Skylight
 uint t = uint(SKYLIGHT_LIVE_SAMPLES);

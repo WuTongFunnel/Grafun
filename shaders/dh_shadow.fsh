@@ -2,10 +2,17 @@
 
 in vec4 glcolor;
 flat in float isWater;
+in vec2 gfDhCameraXZ;
+
+uniform float far;
+
 layout(location = 0) out vec4 color;
 
 void main()
 {
+
+
+
     // DH LODs supply their albedo/opacity through vertex color, not gtexture UVs.
     color = glcolor;
 

@@ -4,67 +4,60 @@
     #define GRAFUN_SHADOW_SAMPLE(sampler_name, uv) texture(sampler_name, uv)
 #endif
 
+// Match native and DH shadow caster distortion, including at the shadow origin.
+// Algebraically identical to the old mapping for r > 0, but without 0/0.
 vec3 distortShadowClipPos(vec3 shadowClipPos){
-  float k=0.95;
-  float distortionFactor = 1/(k+(1/(length(shadowClipPos.xy)))*(1-k)); // distance from the player in shadow clip space
-
-  shadowClipPos.xy /= length(shadowClipPos.xy);
-    shadowClipPos.xy*=distortionFactor;
-  shadowClipPos.z *= 0.025; // increases shadow distance on the Z axis, which helps when the sun is very low in the sky
-
+  const float k = 0.95;
+  float r = length(shadowClipPos.xy);
+  shadowClipPos.xy /= (k * r + (1.0 - k));
+  // Preserve Grafun's original low-sun depth coverage.
+  shadowClipPos.z *= 0.025;
   return shadowClipPos;
 }
+
 vec3 getShadow(vec3 shadowScreenPos){
-  float transparentShadow = step(shadowScreenPos.z, GRAFUN_SHADOW_SAMPLE(shadowtex0, shadowScreenPos.xy).r); // sample the shadow map containing everything
-  /*
-  note that a value of 1.0 means 100% of sunlight is getting through
-  not that there is 100% shadowing
-  */
-
-  if(transparentShadow == 1.0){
-    /*
-    since this shadow map contains everything,
-    there is no shadow at all, so we return full sunlight
-    */
+  // Outside the shadow-map volume is unshadowed, never sample a clamped border
+  // texel and stretch its value over the distant terrain.
+  if (any(lessThan(shadowScreenPos, vec3(0.0))) ||
+      any(greaterThan(shadowScreenPos, vec3(1.0))))
     return vec3(1.0);
-  }
 
-  float opaqueShadow = step(shadowScreenPos.z, GRAFUN_SHADOW_SAMPLE(shadowtex1, shadowScreenPos.xy).r); // sample the shadow map containing only opaque stuff
+  float transparentShadow = step(shadowScreenPos.z,
+      GRAFUN_SHADOW_SAMPLE(shadowtex0, shadowScreenPos.xy).r);
+  if (transparentShadow == 1.0) return vec3(1.0);
 
-  if(opaqueShadow == 0.0){
-    // there is a shadow cast by something opaque, so we return no sunlight
-    return vec3(0.0);
-  }
+  float opaqueShadow = step(shadowScreenPos.z,
+      GRAFUN_SHADOW_SAMPLE(shadowtex1, shadowScreenPos.xy).r);
+  if (opaqueShadow == 0.0) return vec3(0.0);
 
-  // contains the color and alpha (transparency) of the thing casting a shadow
   vec4 shadowColor = GRAFUN_SHADOW_SAMPLE(shadowcolor0, shadowScreenPos.xy);
-shadowColor.rgb = pow(shadowColor.rgb, vec3(2.2));
-
-  /*
-  we use 1 - the alpha to get how much light is let through
-  and multiply that light by the color of the caster
-  */
-  return shadowColor.rgb ;
+  shadowColor.rgb = pow(shadowColor.rgb, vec3(2.2));
+  return shadowColor.rgb;
 }
-vec3 getSoftShadow(vec4 shadowClipPos,float bias){
-  vec3 shadowAccum = vec3(0.0); // sum of all shadow samples
-  const int samples = SHADOW_RANGE * SHADOW_RANGE * 4; // we are taking 2 * SHADOW_RANGE * 2 * SHADOW_RANGE samples
 
-  for(int x = -SHADOW_RANGE; x < SHADOW_RANGE; x++){
-    for(int y = -SHADOW_RANGE; y < SHADOW_RANGE; y++){
-      vec2 offset = vec2(x, y) * SHADOW_RADIUS / float(SHADOW_RANGE);
-      offset /= shadowMapResolution; // offset in the rotated direction by the specified amount. We divide by the resolution so our offset is in terms of pixels
-      vec4 offsetShadowClipPos = shadowClipPos + vec4(offset, 0.0, 0.0); // add offset
-offsetShadowClipPos.z -= bias * offsetShadowClipPos.w;
-   offsetShadowClipPos.z-=0.05*length(offsetShadowClipPos.xy);
-      offsetShadowClipPos.xyz = distortShadowClipPos(offsetShadowClipPos.xyz); // apply distortion
-      vec3 shadowNDCPos = offsetShadowClipPos.xyz / offsetShadowClipPos.w; // convert to NDC space
-      vec3 shadowScreenPos = shadowNDCPos * 0.5 + 0.5; // convert to screen space
-      shadowAccum += getShadow(shadowScreenPos); // take shadow sample
+vec3 getSoftShadow(vec4 shadowClipPos, float bias){
+  // Apply the clip-space bias before the same warp used by both caster passes.
+  shadowClipPos.z -= bias;
+  shadowClipPos.xyz = distortShadowClipPos(shadowClipPos.xyz);
+  vec3 shadowNDCPos = shadowClipPos.xyz / shadowClipPos.w;
+  if (abs(shadowClipPos.w) < 1e-7 ||
+      any(greaterThan(abs(shadowNDCPos), vec3(1.0))))
+    return vec3(1.0);
+
+  vec3 shadowScreenPos = shadowNDCPos * 0.5 + 0.5;
+  vec3 shadowAccum = vec3(0.0);
+  const int samples = SHADOW_RANGE * SHADOW_RANGE * 4;
+
+  // Filter *after* distortion, in actual shadow-map texels. This keeps
+  // the PCF footprint uniform near and far and avoids warped sample jumps.
+  for (int x = -SHADOW_RANGE; x < SHADOW_RANGE; ++x){
+    for (int y = -SHADOW_RANGE; y < SHADOW_RANGE; ++y){
+      vec2 sampleOffset = (vec2(x, y) + vec2(0.5)) *
+          (SHADOW_RADIUS / (float(SHADOW_RANGE) * float(shadowMapResolution)));
+      shadowAccum += getShadow(shadowScreenPos + vec3(sampleOffset, 0.0));
     }
   }
-
-  return shadowAccum / float(samples); // divide sum by count, getting average shadow
+  return shadowAccum / float(samples);
 }
 
 #undef GRAFUN_SHADOW_SAMPLE

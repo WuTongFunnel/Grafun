@@ -1,12 +1,20 @@
 #version 450 compatibility
+#define GRAFUN_COMPOSITE8
+#define GRAFUN_COMPOSITE9
 #include "/lib/function.glsl"
 uniform mat4 gbufferPreviousProjection;
 uniform mat4 gbufferPreviousModelView;
 uniform mat4 dhPreviousProjection;
 in vec2 texcoord;
-/* RENDERTARGETS: 0,10*/
+#ifdef Sun_Bloom
+flat in vec3 gfBloomSunTransmittance;
+#endif
+flat in float gfExposureScale;
+/* RENDERTARGETS: 0,10,6 */
 layout(location = 0) out vec4 finalColor;
 layout(location = 1) out vec4 preColor;
+layout(location = 2) out vec4 bloomcolor;
+#include "/lib/18_post_taa_fusion.glsl"
 //==============================
 // 9 Tap History Sampling
 // 静止不用，运动时调用
@@ -82,7 +90,7 @@ vec4 findBestHistoryColorRGB(vec2 pretexcoord, vec3 currentColor)
     vec2 res = vec2(viewWidth, viewHeight);
     vec2 uvPixel = pretexcoord * res;
     ivec2 basePixel = ivec2(floor(uvPixel));
-    float minDiff = 1e10;
+    float minDiff = 1e20; // Squared threshold of the original 1e10-distance sentinel.
     vec4 bestSample = vec4(0.0);
     for(int dx = -1; dx <= 1; dx++)
     {
@@ -93,7 +101,8 @@ vec4 findBestHistoryColorRGB(vec2 pretexcoord, vec3 currentColor)
             // Skip the two Earth state pixels in the temporal history.
             if (px.y == 0 && px.x <= 1) continue;
             vec4 hist = texelFetch(colortex10, px, 0);
-            float diff = length(hist.rgb - currentColor);
+            vec3 colorDelta = hist.rgb - currentColor;
+            float diff = dot(colorDelta, colorDelta);
             if(diff < minDiff)
             {
                 minDiff = diff;
@@ -142,13 +151,8 @@ vec3 taa(vec3 Color)
         // 静止：当前屏幕历史
         // 运动：9tap搜索
         //==============================
-        vec4 history =
-            texture(
-                colortex10,
-                texcoord
-            );
-        vec3 historyColor =
-            history.rgb;
+        vec4 history;
+        vec3 historyColor;
         vec2 diff =
             abs(
                 (prevtexcoord + djlitter - texcoord)
@@ -158,7 +162,7 @@ vec3 taa(vec3 Color)
         if(any(greaterThan(diff,vec2(0.5))))
         {
             history=findBestHistoryColorRGB(prevtexcoord, Color.rgb);
-            historyColor =  history.rgb;
+            historyColor = history.rgb;
                float historyDepth =
             history.a;
         float reprojectDepth =
@@ -176,6 +180,11 @@ vec3 taa(vec3 Color)
         {
             return Color;
         }
+        }
+        else
+        {
+            history = texture(colortex10, texcoord);
+            historyColor = history.rgb;
         }
           historyColor = ycocgAABBClampToCenter9(texcoord,historyColor);
    
@@ -213,13 +222,8 @@ vec3 taa(vec3 Color)
             return Color;
         vec2 prevtexcoord =
             prevNDC * 0.5 + 0.5;
-        vec4 history =
-            texture(
-                colortex10,
-                texcoord
-            );
-        vec3 historyColor =
-            history.rgb;
+        vec4 history;
+        vec3 historyColor;
         vec2 diff =
             abs(
                 (prevtexcoord + djlitter - texcoord)
@@ -230,6 +234,11 @@ vec3 taa(vec3 Color)
         {
             history=findBestHistoryColorRGB(prevtexcoord, Color.rgb);
             historyColor =   history.rgb;
+        }
+        else
+        {
+            history = texture(colortex10, texcoord);
+            historyColor = history.rgb;
         }
                 if(history.a<1)
         {
@@ -285,13 +294,8 @@ vec3 taa(vec3 Color)
             return Color;
         vec2 prevtexcoord =
             prevNDC * 0.5 + 0.5;
-        vec4 history =
-            texture(
-                colortex10,
-                texcoord
-            );
-        vec3 historyColor =
-            history.rgb;
+        vec4 history;
+        vec3 historyColor;
         vec2 diff =
             abs(
                 (prevtexcoord + djlitter - texcoord)
@@ -303,6 +307,11 @@ vec3 taa(vec3 Color)
             history=findBestHistoryColorRGB(prevtexcoord, Color.rgb);
             historyColor =
                 history.rgb;
+        }
+        else
+        {
+            history = texture(colortex10, texcoord);
+            historyColor = history.rgb;
         }
               historyColor = ycocgAABBClampToCenter9(texcoord,historyColor);
 
@@ -329,12 +338,14 @@ void main()
     {
         finalColor = vec4(texture(colortex0, texcoord).rgb, 1.0);
         preColor = gfEarthFramePose();
+        gfApplyComposite10FromTaa(finalColor);
         return;
     }
     if (all(equal(px, GF_EARTH_MARKER_PIXEL)))
     {
         finalColor = vec4(texture(colortex0, texcoord).rgb, 1.0);
         preColor = vec4(GF_EARTH_MARKER, float(frameCounter % 65536));
+        gfApplyComposite10FromTaa(finalColor);
         return;
     }
     vec3 fColor = texture(colortex0, texcoord).xyz;
@@ -347,4 +358,6 @@ void main()
     finalColor = vec4(fColor, 1.0);
     preColor = vec4(0.0);
 #endif
+    // Exposure / Sun+Moon halo / Vignette + Bloom seed formerly composite10.
+    gfApplyComposite10FromTaa(finalColor);
 }

@@ -38,7 +38,7 @@ layout(location = 1) out vec4 worldpos;
 float skyVisible(vec3 n)
 {
     float cosTheta = clamp(
-        dot(normalize(n), vec3(0.0, 1.0, 0.0)),
+        dot(n, vec3(0.0, 1.0, 0.0)),
         -1.0, 1.0
     );
 
@@ -84,23 +84,16 @@ if (dhOpaque)
             (gbufferModelViewInverse * viewPos).xyz;
 }
 #endif
-float depth2 = texture(depthtex0, texcoord).r;
 {
 	 worldpos=vec4(temp_pixel_world_pos,1);
 }
-#ifdef DISTANT_HORIZONS
-// Native water, if present, replaces the front position in composite2.
-if (dhOpaque) worldpos = vec4(temp_pixel_world_pos, 1.0);
-#endif
-vec3 pixel_world=temp_pixel_world_pos+cameraPosition;
-  	vec2 light=texture(colortex1, texcoord).rg;
-	vec3 encodedNormal = texture(colortex2, texcoord).rgb;
-    vec3 normal = normalize((encodedNormal - 0.5) * 2.0);
-		vec3 p = pixel_world;
 	if (depth >= 1.0 && dhdepth > 1.0) {
     color.rgb *= sunk;
     return;
 }
+  	vec2 light=texture(colortex1, texcoord).rg;
+	vec3 encodedNormal = texture(colortex2, texcoord).rgb;
+    vec3 normal = normalize((encodedNormal - 0.5) * 2.0);
 // Direct solar and lunar lighting, without sky irradiance.
 #ifdef Realtime_Sunlight
 vec3 sunlightColor = light_color * onlyafterT(temp_pixel_world_pos, sun_world);
@@ -115,9 +108,13 @@ vec3 shadow=vec3(1);
 vec3 feetPlayerPos = temp_pixel_world_pos;
 vec3 shadowViewPos = (shadowModelView * vec4(feetPlayerPos, 1.0)).xyz;
 	vec4 shadowClipPos = shadowProjection * vec4(shadowViewPos, 1.0);
-	float pl=length(temp_pixel_world_pos.xz);
 
-shadow= getSoftShadow(shadowClipPos,0.0075); 
+#ifdef DISTANT_HORIZONS
+if (dhOpaque)
+    shadow = gfDhReceiveShadow(shadowClipPos, temp_pixel_world_pos, 0.0025);
+else
+#endif
+    shadow = getSoftShadow(shadowClipPos, 0.0025);
 
 }
 
@@ -126,13 +123,13 @@ shadow= getSoftShadow(shadowClipPos,0.0075);
 float reallight=pow(light.r,2);
 reallight=smoothstep(0,1,reallight)*reallight;
 	vec3 blocklight =reallight * blocklightColor;
-	float sun_sign=1;
-	if(sun_theta_c<0)sun_sign=0;
-vec3 sunlight = sun_sign*sunlightColor * clamp(dot( sun_world, normal), 0.0, 1.0)*shadow;
+	vec3 sun_sign=shadow;
+	if(sun_theta_c<0)sun_sign=vec3(sunCanReachPoint(temp_pixel_world_pos,sun_world));
+vec3 sunlight = sun_sign*sunlightColor * clamp(dot( sun_world, normal), 0.0, 1.0);
 vec3 moonlight =  moonlightcolor* clamp(dot( -sun_world, normal), 0.0, 1.0)*shadow;
 vec3 E_light=gfHandLight;
 vec3 q=vec3(0,0,0);
-vec3 right_hand_light=(E_light/(length(temp_pixel_world_pos-q)*length(temp_pixel_world_pos-q)))*clamp(dot(-normalize(temp_pixel_world_pos-q),normal),0,1);
+vec3 right_hand_light=(E_light/dot(temp_pixel_world_pos-q, temp_pixel_world_pos-q))*clamp(dot(-normalize(temp_pixel_world_pos-q),normal),0,1);
 vec3 skylightColor = vec3(0.0);
 #ifdef Realtime_Skylight
 uint t = uint(SKYLIGHT_LIVE_SAMPLES);

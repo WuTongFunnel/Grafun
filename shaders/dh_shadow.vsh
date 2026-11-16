@@ -5,6 +5,7 @@
 
 out vec4 glcolor;
 flat out float isWater;
+out vec2 gfDhCameraXZ;
 
 void main()
 {
@@ -24,6 +25,11 @@ void main()
     // apply the same spherical curvature, then project into the shadow map.
     vec4 p = ftransform();
     p = shadowModelViewInverse * shadowProjectionInverse * p;
+
+    // Keep the original camera-relative XZ position for the native-range
+    // cull. Test before spherical_mapping(), so the cutoff uses MC blocks.
+    gfDhCameraXZ = p.xz;
+
     vec4 curvedPosition = spherical_mapping(p);
     gl_Position = shadowProjection * shadowModelView * curvedPosition;
 

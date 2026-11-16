@@ -13,4 +13,5 @@
 #include "/lib/14_earth_rotation.glsl"
 #include "/lib/07_Atomsphere.glsl"
 #include "/lib/12_cloud.glsl"
+#include "/lib/15_sky_view_lut.glsl"
 #endif // GRAFUN_FUNCTION_GLSL

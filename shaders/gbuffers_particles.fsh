@@ -6,8 +6,8 @@ uniform sampler2D gtexture;
 uniform sampler2D colortex1;
 uniform float alphaTestRef = 0.1;
 uniform int renderStage;
-const bool colortex0MipmapEnabled = true;
-const bool colortex14MipmapEnabled = true;
+// No colortex0 MIP level is used; avoid misleading pack directives.
+// colortex14 is accessed by texelFetch at LOD 0: no mipmap required.
 /*
 const int colortex10Format = RGBA16F;
 */
